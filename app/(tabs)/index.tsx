@@ -8,7 +8,7 @@ import { Ionicons } from '@expo/vector-icons';
 import * as Haptics from 'expo-haptics';
 import Colors from '@/constants/colors';
 import { useApp } from '@/lib/AppContext';
-import { getUpcomingBirthdays, getInitials, formatDate, getDaysUntilBirthday } from '@/lib/helpers';
+import { getUpcomingBirthdays, getInitials, formatDate, getDaysUntilBirthday, getAgeTurning } from '@/lib/helpers';
 
 export default function HomeScreen() {
   const insets = useSafeAreaInsets();
@@ -134,7 +134,9 @@ export default function HomeScreen() {
                     )}
                     <View style={styles.bdayInfo}>
                       <Text style={styles.bdayName}>{member.name}</Text>
-                      <Text style={styles.bdayDate}>{formatDate(member.birthday)}</Text>
+                      <Text style={styles.bdayDate}>
+                        {formatDate(member.birthday)} · Turning {getAgeTurning(member.birthday)}
+                      </Text>
                     </View>
                     <View style={[
                       styles.daysChip,

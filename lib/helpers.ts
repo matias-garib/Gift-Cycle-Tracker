@@ -76,6 +76,18 @@ export function getUpcomingBirthdays(
     .sort((a, b) => a.daysUntil - b.daysUntil);
 }
 
+export function getAgeTurning(birthdayStr: string): number {
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  const bday = new Date(birthdayStr);
+  const birthYear = bday.getFullYear();
+  const nextBday = new Date(today.getFullYear(), bday.getMonth(), bday.getDate());
+  if (nextBday < today) {
+    nextBday.setFullYear(nextBday.getFullYear() + 1);
+  }
+  return nextBday.getFullYear() - birthYear;
+}
+
 export function timeSince(dateStr: string): string {
   const seconds = Math.floor((Date.now() - new Date(dateStr).getTime()) / 1000);
   if (seconds < 60) return 'just now';

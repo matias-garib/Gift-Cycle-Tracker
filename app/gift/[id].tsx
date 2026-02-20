@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import {
   View, Text, ScrollView, Pressable, StyleSheet, Platform,
-  TextInput, Alert, Modal, ActivityIndicator,
+  TextInput, Alert, Modal, ActivityIndicator, Linking,
 } from 'react-native';
 import { router, useLocalSearchParams } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -16,17 +16,13 @@ export default function GiftDetailScreen() {
   const insets = useSafeAreaInsets();
   const {
     user, getGiftById, getGroupById, getUserById,
-    addWishlistItem, removeWishlistItem, markPurchased, markPaid,
+    markPurchased, markPaid,
   } = useApp();
 
   const gift = getGiftById(id!);
   const group = gift ? getGroupById(gift.groupId) : undefined;
   const birthdayPerson = gift ? getUserById(gift.birthdayPersonId) : undefined;
   const buyer = gift?.buyerId ? getUserById(gift.buyerId) : undefined;
-
-  const [showAddWish, setShowAddWish] = useState(false);
-  const [wishTitle, setWishTitle] = useState('');
-  const [wishUrl, setWishUrl] = useState('');
 
   const [showPurchase, setShowPurchase] = useState(false);
   const [purchaseItem, setPurchaseItem] = useState('');
@@ -49,19 +45,6 @@ export default function GiftDetailScreen() {
   const myPayment = gift.payments.find((p) => p.userId === user.id);
   const paidCount = gift.payments.filter((p) => p.paid).length;
   const unpaidCount = gift.payments.filter((p) => !p.paid).length;
-
-  const handleAddWish = async () => {
-    if (!wishTitle.trim()) return;
-    await addWishlistItem(gift.id, {
-      title: wishTitle.trim(),
-      url: wishUrl.trim() || undefined,
-      addedBy: user.id,
-    });
-    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-    setShowAddWish(false);
-    setWishTitle('');
-    setWishUrl('');
-  };
 
   const handlePurchase = async () => {
     if (!purchaseItem.trim() || !purchaseCost.trim()) return;
@@ -151,33 +134,32 @@ export default function GiftDetailScreen() {
 
         {gift.phase === 'ideation' && (
           <View style={styles.section}>
-            <View style={styles.sectionHeader}>
-              <Text style={styles.sectionTitle}>Wishlist</Text>
-              {isBirthdayPerson && (
-                <Pressable
-                  onPress={() => {
-                    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-                    setShowAddWish(true);
-                  }}
-                >
-                  <Ionicons name="add-circle" size={26} color={Colors.primary} />
-                </Pressable>
-              )}
-            </View>
+            <Text style={styles.sectionTitle}>
+              {birthdayPerson?.name ? `${birthdayPerson.name}'s Wishlist` : 'Wishlist'}
+            </Text>
 
-            {gift.wishlist.length === 0 ? (
+            {(birthdayPerson?.wishlist || []).length === 0 ? (
               <View style={styles.emptyCard}>
                 <Ionicons name="list-outline" size={28} color={Colors.textTertiary} />
                 <Text style={styles.emptyText}>
                   {isBirthdayPerson
-                    ? 'Add items to your wishlist!'
-                    : 'Waiting for the birthday person to add wishes'}
+                    ? 'Add items to your wishlist from your Profile tab!'
+                    : `${birthdayPerson?.name || 'They'} hasn't added any gift ideas yet`}
                 </Text>
               </View>
             ) : (
               <View style={styles.wishList}>
-                {gift.wishlist.map((item) => (
-                  <View key={item.id} style={styles.wishItem}>
+                {(birthdayPerson?.wishlist || []).map((item) => (
+                  <Pressable
+                    key={item.id}
+                    style={styles.wishItem}
+                    onPress={() => {
+                      if (item.url) {
+                        Linking.openURL(item.url.startsWith('http') ? item.url : `https://${item.url}`);
+                      }
+                    }}
+                    disabled={!item.url}
+                  >
                     <Ionicons name="gift-outline" size={18} color={Colors.accent} />
                     <View style={{ flex: 1 }}>
                       <Text style={styles.wishTitle}>{item.title}</Text>
@@ -185,22 +167,38 @@ export default function GiftDetailScreen() {
                         <Text style={styles.wishUrl} numberOfLines={1}>{item.url}</Text>
                       ) : null}
                     </View>
-                    {isBirthdayPerson && item.addedBy === user.id && (
-                      <Pressable
-                        onPress={() => {
-                          removeWishlistItem(gift.id, item.id);
-                          Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-                        }}
-                      >
-                        <Ionicons name="close-circle" size={20} color={Colors.textTertiary} />
-                      </Pressable>
+                    {item.url && (
+                      <Ionicons name="open-outline" size={16} color={Colors.accent} />
                     )}
-                  </View>
+                  </Pressable>
                 ))}
               </View>
             )}
 
-            {!isBirthdayPerson && gift.wishlist.length > 0 && (
+            {birthdayPerson && (birthdayPerson.shoeSize || birthdayPerson.clothesSize || birthdayPerson.waistSize) && (
+              <View style={styles.sizesRow}>
+                {birthdayPerson.shoeSize ? (
+                  <View style={styles.sizeChip}>
+                    <Text style={styles.sizeLabel}>Shoe</Text>
+                    <Text style={styles.sizeValue}>{birthdayPerson.shoeSize}</Text>
+                  </View>
+                ) : null}
+                {birthdayPerson.clothesSize ? (
+                  <View style={styles.sizeChip}>
+                    <Text style={styles.sizeLabel}>Clothes</Text>
+                    <Text style={styles.sizeValue}>{birthdayPerson.clothesSize}</Text>
+                  </View>
+                ) : null}
+                {birthdayPerson.waistSize ? (
+                  <View style={styles.sizeChip}>
+                    <Text style={styles.sizeLabel}>Waist</Text>
+                    <Text style={styles.sizeValue}>{birthdayPerson.waistSize}</Text>
+                  </View>
+                ) : null}
+              </View>
+            )}
+
+            {!isBirthdayPerson && (birthdayPerson?.wishlist || []).length > 0 && (
               <Pressable
                 style={({ pressed }) => [styles.purchaseBtn, pressed && { opacity: 0.85 }]}
                 onPress={() => {
@@ -337,46 +335,6 @@ export default function GiftDetailScreen() {
           </>
         )}
       </ScrollView>
-
-      <Modal visible={showAddWish} transparent animationType="fade">
-        <Pressable style={styles.modalOverlay} onPress={() => setShowAddWish(false)}>
-          <Pressable style={styles.modalContent} onPress={(e) => e.stopPropagation()}>
-            <Text style={styles.modalTitle}>Add to Wishlist</Text>
-            <TextInput
-              style={styles.modalInput}
-              placeholder="Item name"
-              placeholderTextColor={Colors.textTertiary}
-              value={wishTitle}
-              onChangeText={setWishTitle}
-              autoFocus
-            />
-            <TextInput
-              style={styles.modalInput}
-              placeholder="Link (optional)"
-              placeholderTextColor={Colors.textTertiary}
-              value={wishUrl}
-              onChangeText={setWishUrl}
-              autoCapitalize="none"
-              keyboardType="url"
-            />
-            <View style={styles.modalActions}>
-              <Pressable
-                style={({ pressed }) => [styles.modalCancel, pressed && { opacity: 0.7 }]}
-                onPress={() => setShowAddWish(false)}
-              >
-                <Text style={styles.modalCancelText}>Cancel</Text>
-              </Pressable>
-              <Pressable
-                style={({ pressed }) => [styles.modalSubmit, pressed && { opacity: 0.85 }, !wishTitle.trim() && { opacity: 0.5 }]}
-                onPress={handleAddWish}
-                disabled={!wishTitle.trim()}
-              >
-                <Text style={styles.modalSubmitText}>Add</Text>
-              </Pressable>
-            </View>
-          </Pressable>
-        </Pressable>
-      </Modal>
 
       <Modal visible={showPurchase} transparent animationType="fade">
         <Pressable style={styles.modalOverlay} onPress={() => setShowPurchase(false)}>
@@ -601,6 +559,33 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontFamily: 'Inter_600SemiBold',
     color: Colors.white,
+  },
+  sizesRow: {
+    flexDirection: 'row',
+    gap: 8,
+    marginTop: 12,
+  },
+  sizeChip: {
+    flex: 1,
+    backgroundColor: Colors.card,
+    borderRadius: 10,
+    padding: 10,
+    alignItems: 'center',
+    borderWidth: 1,
+    borderColor: Colors.cardBorder,
+  },
+  sizeLabel: {
+    fontSize: 10,
+    fontFamily: 'Inter_500Medium',
+    color: Colors.textTertiary,
+    textTransform: 'uppercase' as const,
+    letterSpacing: 0.5,
+  },
+  sizeValue: {
+    fontSize: 15,
+    fontFamily: 'Inter_600SemiBold',
+    color: Colors.text,
+    marginTop: 2,
   },
   detailCard: {
     backgroundColor: Colors.card,

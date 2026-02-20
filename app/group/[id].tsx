@@ -1,7 +1,7 @@
 import React, { useState, useMemo } from 'react';
 import {
   View, Text, ScrollView, Pressable, StyleSheet, Platform,
-  Alert, Share, Modal, TextInput, ActivityIndicator, Image, Linking,
+  Share, Modal, ActivityIndicator, Image,
 } from 'react-native';
 import { router, useLocalSearchParams } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -10,16 +10,14 @@ import * as Haptics from 'expo-haptics';
 import * as ImagePicker from 'expo-image-picker';
 import Colors from '@/constants/colors';
 import { useApp } from '@/lib/AppContext';
-import { getInitials, getUpcomingBirthdays, formatDate } from '@/lib/helpers';
+import { getInitials, getUpcomingBirthdays, formatDate, getDaysUntilBirthday, getAgeTurning } from '@/lib/helpers';
 
 export default function GroupDetailScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const insets = useSafeAreaInsets();
   const { user, getGroupById, getGiftsForGroup, createGift, updateGroupImage, removeMemberFromGroup } = useApp();
-  const [showNewGift, setShowNewGift] = useState(false);
-  const [selectedPerson, setSelectedPerson] = useState('');
-  const [creating, setCreating] = useState(false);
   const [inviteExpanded, setInviteExpanded] = useState(false);
+  const [startingGift, setStartingGift] = useState<string | null>(null);
   const [removingMember, setRemovingMember] = useState<string | null>(null);
 
   const group = getGroupById(id!);
@@ -32,6 +30,24 @@ export default function GroupDetailScreen() {
       30
     );
   }, [group]);
+
+  const activeGifts = useMemo(() => {
+    return groupGifts.filter((g) => {
+      if (g.phase === 'ideation' || g.phase === 'payment') return true;
+      if (g.phase === 'settlement' && g.payments.some((p) => !p.paid)) return true;
+      return false;
+    });
+  }, [groupGifts]);
+
+  const activeMembers = useMemo(() => {
+    if (!group || !user) return [];
+    const activeGiftPersonIds = new Set(activeGifts.map((g) => g.birthdayPersonId));
+    return group.members
+      .filter((m) => m.id !== user.id && m.birthday)
+      .map((m) => ({ ...m, daysUntil: getDaysUntilBirthday(m.birthday) }))
+      .filter((m) => m.daysUntil <= 20 && m.daysUntil >= 0 && !activeGiftPersonIds.has(m.id))
+      .sort((a, b) => a.daysUntil - b.daysUntil);
+  }, [group, user, activeGifts]);
 
   if (!group || !user) {
     return (
@@ -80,18 +96,15 @@ export default function GroupDetailScreen() {
     setRemovingMember(null);
   };
 
-  const handleCreateGift = async () => {
-    if (!selectedPerson) return;
-    setCreating(true);
+  const handleStartGift = async (memberId: string) => {
+    setStartingGift(memberId);
     try {
-      const gift = await createGift(group.id, selectedPerson);
+      const gift = await createGift(group.id, memberId);
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-      setShowNewGift(false);
-      setSelectedPerson('');
       router.push(`/gift/${gift.id}`);
     } catch {
     } finally {
-      setCreating(false);
+      setStartingGift(null);
     }
   };
 
@@ -188,7 +201,7 @@ export default function GroupDetailScreen() {
                 )}
                 <View style={{ flex: 1 }}>
                   <Text style={styles.memberName}>{member.name}</Text>
-                  <Text style={styles.memberDate}>{formatDate(member.birthday)}</Text>
+                  <Text style={styles.memberDate}>{formatDate(member.birthday)} · Turning {getAgeTurning(member.birthday)}</Text>
                 </View>
                 <View style={[
                   styles.daysChip,
@@ -209,26 +222,50 @@ export default function GroupDetailScreen() {
         )}
 
         <View style={styles.section}>
-          <View style={styles.sectionHeader}>
-            <Text style={styles.sectionTitle}>Gifts</Text>
-            <Pressable
-              onPress={() => {
-                Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-                setShowNewGift(true);
-              }}
-            >
-              <Ionicons name="add-circle" size={28} color={Colors.primary} />
-            </Pressable>
-          </View>
+          <Text style={styles.sectionTitle}>Active Gifts</Text>
 
-          {groupGifts.length === 0 ? (
+          {activeMembers.length === 0 && activeGifts.length === 0 ? (
             <View style={styles.emptyCard}>
               <Ionicons name="gift-outline" size={32} color={Colors.textTertiary} />
-              <Text style={styles.emptyText}>No gifts yet. Start one for an upcoming birthday!</Text>
+              <Text style={styles.emptyText}>No active gifts right now. They'll appear when a birthday is within 20 days.</Text>
             </View>
           ) : (
             <View style={styles.giftList}>
-              {groupGifts.map((gift) => {
+              {activeMembers.map((member) => (
+                <View key={`suggest-${member.id}`} style={styles.suggestCard}>
+                  <View style={styles.suggestTop}>
+                    {member.profileImage ? (
+                      <Image source={{ uri: member.profileImage }} style={styles.miniAvatarImg} />
+                    ) : (
+                      <View style={[styles.miniAvatar, { backgroundColor: member.avatarColor }]}>
+                        <Text style={styles.miniAvatarText}>{getInitials(member.name)}</Text>
+                      </View>
+                    )}
+                    <View style={{ flex: 1 }}>
+                      <Text style={styles.giftPersonName}>Start a gift for {member.name}</Text>
+                      <Text style={styles.giftItem}>
+                        {formatDate(member.birthday)} · {member.daysUntil === 0 ? 'Today!' : `${member.daysUntil}d away`}
+                      </Text>
+                    </View>
+                  </View>
+                  <Pressable
+                    style={({ pressed }) => [styles.startGiftBtn, pressed && { opacity: 0.85 }, startingGift === member.id && { opacity: 0.5 }]}
+                    onPress={() => handleStartGift(member.id)}
+                    disabled={startingGift === member.id}
+                  >
+                    {startingGift === member.id ? (
+                      <ActivityIndicator size="small" color={Colors.white} />
+                    ) : (
+                      <>
+                        <Ionicons name="gift" size={16} color={Colors.white} />
+                        <Text style={styles.startGiftText}>Start Gift</Text>
+                      </>
+                    )}
+                  </Pressable>
+                </View>
+              ))}
+
+              {activeGifts.map((gift) => {
                 const person = group.members.find((m) => m.id === gift.birthdayPersonId);
                 const paidCount = gift.payments.filter((p) => p.paid).length;
                 const totalCount = gift.payments.length;
@@ -319,64 +356,6 @@ export default function GroupDetailScreen() {
           </View>
         </View>
       </ScrollView>
-
-      <Modal visible={showNewGift} transparent animationType="fade">
-        <Pressable style={styles.modalOverlay} onPress={() => setShowNewGift(false)}>
-          <Pressable style={styles.modalContent} onPress={(e) => e.stopPropagation()}>
-            <Text style={styles.modalTitle}>Start a Gift</Text>
-            <Text style={styles.modalSub}>Who is the birthday person?</Text>
-            <ScrollView style={styles.personList} showsVerticalScrollIndicator={false}>
-              {group.members
-                .filter((m) => m.id !== user.id)
-                .map((member) => (
-                  <Pressable
-                    key={member.id}
-                    style={[
-                      styles.personItem,
-                      selectedPerson === member.id && styles.personSelected,
-                    ]}
-                    onPress={() => setSelectedPerson(member.id)}
-                  >
-                    {member.profileImage ? (
-                      <Image source={{ uri: member.profileImage }} style={styles.personAvatarImg} />
-                    ) : (
-                      <View style={[styles.personAvatar, { backgroundColor: member.avatarColor }]}>
-                        <Text style={styles.personAvatarText}>{getInitials(member.name)}</Text>
-                      </View>
-                    )}
-                    <Text style={styles.personName}>{member.name}</Text>
-                    {selectedPerson === member.id && (
-                      <Ionicons name="checkmark-circle" size={22} color={Colors.primary} />
-                    )}
-                  </Pressable>
-                ))}
-            </ScrollView>
-            <View style={styles.modalActions}>
-              <Pressable
-                style={({ pressed }) => [styles.modalCancel, pressed && { opacity: 0.7 }]}
-                onPress={() => setShowNewGift(false)}
-              >
-                <Text style={styles.modalCancelText}>Cancel</Text>
-              </Pressable>
-              <Pressable
-                style={({ pressed }) => [
-                  styles.modalSubmit,
-                  pressed && { opacity: 0.85 },
-                  !selectedPerson && { opacity: 0.5 },
-                ]}
-                onPress={handleCreateGift}
-                disabled={!selectedPerson || creating}
-              >
-                {creating ? (
-                  <ActivityIndicator size="small" color={Colors.white} />
-                ) : (
-                  <Text style={styles.modalSubmitText}>Create</Text>
-                )}
-              </Pressable>
-            </View>
-          </Pressable>
-        </Pressable>
-      </Modal>
 
       <Modal visible={!!removingMember} transparent animationType="fade">
         <Pressable style={styles.modalOverlay} onPress={() => setRemovingMember(null)}>
@@ -613,6 +592,34 @@ const styles = StyleSheet.create({
     textAlign: 'center',
   },
   giftList: { gap: 8 },
+  suggestCard: {
+    backgroundColor: Colors.card,
+    borderRadius: 14,
+    padding: 16,
+    borderWidth: 1,
+    borderColor: Colors.cardBorder,
+    borderStyle: 'dashed' as const,
+  },
+  suggestTop: {
+    flexDirection: 'row' as const,
+    alignItems: 'center' as const,
+    marginBottom: 12,
+  },
+  startGiftBtn: {
+    flexDirection: 'row' as const,
+    alignItems: 'center' as const,
+    justifyContent: 'center' as const,
+    gap: 6,
+    backgroundColor: Colors.primary,
+    borderRadius: 10,
+    paddingVertical: 10,
+    paddingHorizontal: 16,
+  },
+  startGiftText: {
+    fontSize: 14,
+    fontFamily: 'Inter_600SemiBold',
+    color: Colors.white,
+  },
   giftCard: {
     backgroundColor: Colors.card,
     borderRadius: 14,

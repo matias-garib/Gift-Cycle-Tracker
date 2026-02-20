@@ -7,6 +7,10 @@ export interface User {
   paymentHandle: string;
   avatarColor: string;
   profileImage?: string;
+  wishlist?: WishlistItem[];
+  shoeSize?: string;
+  clothesSize?: string;
+  waistSize?: string;
 }
 
 export interface Group {

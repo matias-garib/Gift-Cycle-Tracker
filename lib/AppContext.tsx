@@ -11,6 +11,8 @@ interface AppContextValue {
   login: (email: string, name: string) => Promise<void>;
   logout: () => Promise<void>;
   updateProfile: (updates: Partial<User>) => Promise<void>;
+  addProfileWishlistItem: (item: { title: string; url?: string }) => Promise<void>;
+  removeProfileWishlistItem: (itemId: string) => Promise<void>;
   createGroup: (name: string, groupImage?: string) => Promise<Group>;
   updateGroupImage: (groupId: string, imageUri: string) => Promise<void>;
   joinGroup: (inviteCode: string) => Promise<Group | null>;
@@ -97,6 +99,37 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const updateProfile = useCallback(async (updates: Partial<User>) => {
     if (!user) return;
     const updated = { ...user, ...updates };
+    await Storage.setCurrentUser(updated);
+    await Storage.saveUser(updated);
+    setUser(updated);
+    setAllUsers((prev) => prev.map((u) => (u.id === updated.id ? updated : u)));
+    const updatedGroups = groups.map((g) => ({
+      ...g,
+      members: g.members.map((m) => (m.id === updated.id ? updated : m)),
+    }));
+    setGroups(updatedGroups);
+    await Storage.saveGroups(updatedGroups);
+  }, [user, groups]);
+
+  const addProfileWishlistItem = useCallback(async (item: { title: string; url?: string }) => {
+    if (!user) return;
+    const newItem: WishlistItem = { id: generateId(), title: item.title, url: item.url, addedBy: user.id };
+    const updated = { ...user, wishlist: [...(user.wishlist || []), newItem] };
+    await Storage.setCurrentUser(updated);
+    await Storage.saveUser(updated);
+    setUser(updated);
+    setAllUsers((prev) => prev.map((u) => (u.id === updated.id ? updated : u)));
+    const updatedGroups = groups.map((g) => ({
+      ...g,
+      members: g.members.map((m) => (m.id === updated.id ? updated : m)),
+    }));
+    setGroups(updatedGroups);
+    await Storage.saveGroups(updatedGroups);
+  }, [user, groups]);
+
+  const removeProfileWishlistItem = useCallback(async (itemId: string) => {
+    if (!user) return;
+    const updated = { ...user, wishlist: (user.wishlist || []).filter((w) => w.id !== itemId) };
     await Storage.setCurrentUser(updated);
     await Storage.saveUser(updated);
     setUser(updated);
@@ -350,12 +383,13 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const value = useMemo(() => ({
     user, groups, gifts, loading,
     login, logout, updateProfile,
+    addProfileWishlistItem, removeProfileWishlistItem,
     createGroup, updateGroupImage, joinGroup, addMemberToGroup, removeMemberFromGroup,
     createGift, addWishlistItem, removeWishlistItem,
     markPurchased, markPaid,
     getGroupById, getGiftById, getGiftsForGroup, getUserById,
     seedDemoData,
-  }), [user, groups, gifts, loading, login, logout, updateProfile, createGroup, updateGroupImage, joinGroup, addMemberToGroup, removeMemberFromGroup, createGift, addWishlistItem, removeWishlistItem, markPurchased, markPaid, getGroupById, getGiftById, getGiftsForGroup, getUserById, seedDemoData]);
+  }), [user, groups, gifts, loading, login, logout, updateProfile, addProfileWishlistItem, removeProfileWishlistItem, createGroup, updateGroupImage, joinGroup, addMemberToGroup, removeMemberFromGroup, createGift, addWishlistItem, removeWishlistItem, markPurchased, markPaid, getGroupById, getGiftById, getGiftsForGroup, getUserById, seedDemoData]);
 
   return <AppContext.Provider value={value}>{children}</AppContext.Provider>;
 }
