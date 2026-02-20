@@ -240,12 +240,12 @@ export default function GiftDetailScreen() {
                       <Text style={styles.detailLabel}>Purchased By</Text>
                       <Text style={styles.detailValue}>{buyer.name}</Text>
                     </View>
-                    {buyer.paymentMethod && (
+                    {buyer.paymentHandle && (
                       <View style={styles.paymentInfoBox}>
-                        <Ionicons name="card" size={18} color={Colors.primary} />
+                        <Ionicons name="card" size={18} color={Colors.primary} style={{ marginTop: 2 }} />
                         <View style={{ flex: 1 }}>
-                          <Text style={styles.payMethodText}>{buyer.paymentMethod}</Text>
-                          <Text style={styles.payHandleText}>{buyer.paymentHandle}</Text>
+                          <Text style={styles.payMethodLabel}>Payment Details</Text>
+                          <Text style={styles.payHandleText} selectable>{buyer.paymentHandle}</Text>
                         </View>
                       </View>
                     )}
@@ -634,15 +634,17 @@ const styles = StyleSheet.create({
     padding: 12,
     marginTop: 4,
   },
-  payMethodText: {
-    fontSize: 14,
+  payMethodLabel: {
+    fontSize: 12,
     fontFamily: 'Inter_600SemiBold',
     color: Colors.primary,
+    marginBottom: 4,
   },
   payHandleText: {
-    fontSize: 13,
+    fontSize: 14,
     fontFamily: 'Inter_400Regular',
     color: Colors.primaryLight,
+    lineHeight: 20,
   },
   payBtn: {
     flexDirection: 'row',

@@ -40,6 +40,11 @@ export default function AuthScreen() {
     }
   };
 
+  const handleSocialLogin = (provider: string) => {
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    setError(`${provider} sign-in coming soon. Please use email for now.`);
+  };
+
   return (
     <KeyboardAvoidingView
       style={[styles.container, { paddingTop: Platform.OS === 'web' ? 67 : insets.top }]}
@@ -59,6 +64,30 @@ export default function AuthScreen() {
         <Text style={styles.subtitle}>
           Coordinate birthday gifts with your friends, without the WhatsApp chaos.
         </Text>
+
+        <View style={styles.socialButtons}>
+          <Pressable
+            style={({ pressed }) => [styles.socialBtn, pressed && { opacity: 0.85, transform: [{ scale: 0.98 }] }]}
+            onPress={() => handleSocialLogin('Google')}
+          >
+            <Ionicons name="logo-google" size={20} color="#DB4437" />
+            <Text style={styles.socialBtnText}>Continue with Google</Text>
+          </Pressable>
+
+          <Pressable
+            style={({ pressed }) => [styles.socialBtn, pressed && { opacity: 0.85, transform: [{ scale: 0.98 }] }]}
+            onPress={() => handleSocialLogin('Apple')}
+          >
+            <Ionicons name="logo-apple" size={20} color={Colors.text} />
+            <Text style={styles.socialBtnText}>Continue with Apple</Text>
+          </Pressable>
+        </View>
+
+        <View style={styles.dividerRow}>
+          <View style={styles.dividerLine} />
+          <Text style={styles.dividerText}>or create an account</Text>
+          <View style={styles.dividerLine} />
+        </View>
 
         <View style={styles.form}>
           <View style={styles.inputWrap}>
@@ -88,8 +117,10 @@ export default function AuthScreen() {
 
           {!!error && (
             <View style={styles.errorWrap}>
-              <Ionicons name="alert-circle" size={16} color={Colors.danger} />
-              <Text style={styles.errorText}>{error}</Text>
+              <Ionicons name="alert-circle" size={16} color={error.includes('coming soon') ? Colors.warning : Colors.danger} />
+              <Text style={[styles.errorText, error.includes('coming soon') && { color: Colors.warning }]}>
+                {error}
+              </Text>
             </View>
           )}
 
@@ -105,7 +136,7 @@ export default function AuthScreen() {
             {submitting ? (
               <ActivityIndicator color={Colors.white} />
             ) : (
-              <Text style={styles.buttonText}>Get Started</Text>
+              <Text style={styles.buttonText}>Create Account</Text>
             )}
           </Pressable>
         </View>
@@ -149,8 +180,44 @@ const styles = StyleSheet.create({
     color: Colors.textSecondary,
     textAlign: 'center',
     lineHeight: 22,
-    marginBottom: 32,
+    marginBottom: 28,
     paddingHorizontal: 16,
+  },
+  socialButtons: {
+    gap: 10,
+    marginBottom: 20,
+  },
+  socialBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 10,
+    height: 52,
+    borderRadius: 14,
+    backgroundColor: Colors.card,
+    borderWidth: 1,
+    borderColor: Colors.cardBorder,
+  },
+  socialBtnText: {
+    fontSize: 16,
+    fontFamily: 'Inter_500Medium',
+    color: Colors.text,
+  },
+  dividerRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    marginBottom: 20,
+  },
+  dividerLine: {
+    flex: 1,
+    height: 1,
+    backgroundColor: Colors.border,
+  },
+  dividerText: {
+    fontSize: 13,
+    fontFamily: 'Inter_400Regular',
+    color: Colors.textTertiary,
   },
   form: {
     gap: 14,
@@ -184,6 +251,7 @@ const styles = StyleSheet.create({
     fontSize: 13,
     fontFamily: 'Inter_400Regular',
     color: Colors.danger,
+    flex: 1,
   },
   button: {
     height: 52,

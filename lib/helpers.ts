@@ -43,6 +43,14 @@ export function formatFullDate(dateStr: string): string {
   return d.toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' });
 }
 
+export function formatBirthdayDisplay(dateStr: string): string {
+  if (!dateStr) return 'Not set';
+  const parts = dateStr.split('-');
+  if (parts.length !== 3) return dateStr;
+  const [year, month, day] = parts;
+  return `${day}/${month}/${year}`;
+}
+
 export function getDaysUntilBirthday(birthdayStr: string): number {
   const today = new Date();
   today.setHours(0, 0, 0, 0);

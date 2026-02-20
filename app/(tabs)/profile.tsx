@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import {
   View, Text, ScrollView, Pressable, StyleSheet, Platform,
-  TextInput, Alert,
+  TextInput,
 } from 'react-native';
 import { router } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -9,23 +9,32 @@ import { Ionicons } from '@expo/vector-icons';
 import * as Haptics from 'expo-haptics';
 import Colors from '@/constants/colors';
 import { useApp } from '@/lib/AppContext';
-import { getInitials, formatFullDate } from '@/lib/helpers';
+import { getInitials } from '@/lib/helpers';
+import { formatBirthdayDisplay } from '@/lib/helpers';
 
 export default function ProfileScreen() {
   const insets = useSafeAreaInsets();
   const { user, updateProfile, logout, groups, seedDemoData } = useApp();
   const [editing, setEditing] = useState(false);
   const [name, setName] = useState('');
-  const [birthday, setBirthday] = useState('');
-  const [paymentMethod, setPaymentMethod] = useState('');
-  const [paymentHandle, setPaymentHandle] = useState('');
+  const [birthdayDay, setBirthdayDay] = useState('');
+  const [birthdayMonth, setBirthdayMonth] = useState('');
+  const [birthdayYear, setBirthdayYear] = useState('');
+  const [paymentInfo, setPaymentInfo] = useState('');
+  const [showLogoutConfirm, setShowLogoutConfirm] = useState(false);
 
   useEffect(() => {
     if (user) {
       setName(user.name);
-      setBirthday(user.birthday);
-      setPaymentMethod(user.paymentMethod);
-      setPaymentHandle(user.paymentHandle);
+      if (user.birthday) {
+        const parts = user.birthday.split('-');
+        if (parts.length === 3) {
+          setBirthdayYear(parts[0]);
+          setBirthdayMonth(parts[1]);
+          setBirthdayDay(parts[2]);
+        }
+      }
+      setPaymentInfo(user.paymentHandle || '');
     }
   }, [user]);
 
@@ -43,28 +52,25 @@ export default function ProfileScreen() {
   }
 
   const handleSave = async () => {
+    let birthday = '';
+    if (birthdayDay && birthdayMonth && birthdayYear) {
+      const day = birthdayDay.padStart(2, '0');
+      const month = birthdayMonth.padStart(2, '0');
+      birthday = `${birthdayYear}-${month}-${day}`;
+    }
     await updateProfile({
       name: name.trim(),
-      birthday: birthday.trim(),
-      paymentMethod: paymentMethod.trim(),
-      paymentHandle: paymentHandle.trim(),
+      birthday,
+      paymentMethod: paymentInfo.trim() ? 'Bank Transfer' : '',
+      paymentHandle: paymentInfo.trim(),
     });
     Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
     setEditing(false);
   };
 
-  const handleLogout = () => {
-    Alert.alert('Sign Out', 'Are you sure you want to sign out?', [
-      { text: 'Cancel', style: 'cancel' },
-      {
-        text: 'Sign Out',
-        style: 'destructive',
-        onPress: async () => {
-          await logout();
-          router.replace('/auth');
-        },
-      },
-    ]);
+  const handleLogout = async () => {
+    await logout();
+    router.replace('/auth');
   };
 
   const webTop = Platform.OS === 'web' ? 67 : 0;
@@ -116,56 +122,78 @@ export default function ProfileScreen() {
         <View style={styles.section}>
           <Text style={styles.sectionTitle}>Birthday</Text>
           {editing ? (
-            <TextInput
-              style={styles.fieldInput}
-              value={birthday}
-              onChangeText={setBirthday}
-              placeholder="YYYY-MM-DD"
-              placeholderTextColor={Colors.textTertiary}
-            />
+            <View style={styles.dateRow}>
+              <View style={styles.dateInputWrap}>
+                <TextInput
+                  style={styles.dateInput}
+                  value={birthdayDay}
+                  onChangeText={(t) => setBirthdayDay(t.replace(/[^0-9]/g, '').slice(0, 2))}
+                  placeholder="DD"
+                  placeholderTextColor={Colors.textTertiary}
+                  keyboardType="number-pad"
+                  maxLength={2}
+                />
+                <Text style={styles.dateLabel}>Day</Text>
+              </View>
+              <Text style={styles.dateSep}>/</Text>
+              <View style={styles.dateInputWrap}>
+                <TextInput
+                  style={styles.dateInput}
+                  value={birthdayMonth}
+                  onChangeText={(t) => setBirthdayMonth(t.replace(/[^0-9]/g, '').slice(0, 2))}
+                  placeholder="MM"
+                  placeholderTextColor={Colors.textTertiary}
+                  keyboardType="number-pad"
+                  maxLength={2}
+                />
+                <Text style={styles.dateLabel}>Month</Text>
+              </View>
+              <Text style={styles.dateSep}>/</Text>
+              <View style={[styles.dateInputWrap, { flex: 1.5 }]}>
+                <TextInput
+                  style={styles.dateInput}
+                  value={birthdayYear}
+                  onChangeText={(t) => setBirthdayYear(t.replace(/[^0-9]/g, '').slice(0, 4))}
+                  placeholder="YYYY"
+                  placeholderTextColor={Colors.textTertiary}
+                  keyboardType="number-pad"
+                  maxLength={4}
+                />
+                <Text style={styles.dateLabel}>Year</Text>
+              </View>
+            </View>
           ) : (
             <View style={styles.fieldRow}>
               <Ionicons name="calendar-outline" size={18} color={Colors.accent} />
               <Text style={styles.fieldValue}>
-                {user.birthday ? formatFullDate(user.birthday) : 'Not set'}
+                {user.birthday ? formatBirthdayDisplay(user.birthday) : 'Not set'}
               </Text>
             </View>
           )}
         </View>
 
         <View style={styles.section}>
-          <Text style={styles.sectionTitle}>Payment Info</Text>
+          <Text style={styles.sectionTitle}>Payment Details</Text>
+          <Text style={styles.sectionHint}>
+            Enter your full payment/bank transfer details so others know where to send money
+          </Text>
           {editing ? (
-            <View style={styles.paymentEdit}>
-              <TextInput
-                style={styles.fieldInput}
-                value={paymentMethod}
-                onChangeText={setPaymentMethod}
-                placeholder="Method (e.g., Venmo, Zelle)"
-                placeholderTextColor={Colors.textTertiary}
-              />
-              <TextInput
-                style={styles.fieldInput}
-                value={paymentHandle}
-                onChangeText={setPaymentHandle}
-                placeholder="Handle (e.g., @yourname)"
-                placeholderTextColor={Colors.textTertiary}
-              />
-            </View>
+            <TextInput
+              style={styles.paymentInput}
+              value={paymentInfo}
+              onChangeText={setPaymentInfo}
+              placeholder={"e.g., Venmo: @yourname\nor\nBank: Banco Estado\nAccount: 1234567890\nRUT: 12.345.678-9\nType: Cuenta Vista\nEmail: your@email.com"}
+              placeholderTextColor={Colors.textTertiary}
+              multiline
+              numberOfLines={6}
+              textAlignVertical="top"
+            />
           ) : (
-            <View style={styles.paymentInfo}>
-              <View style={styles.fieldRow}>
-                <Ionicons name="card-outline" size={18} color={Colors.accent} />
-                <Text style={styles.fieldValue}>
-                  {user.paymentMethod || 'Not set'}
-                </Text>
-              </View>
-              {user.paymentHandle ? (
-                <View style={styles.fieldRow}>
-                  <Ionicons name="at-outline" size={18} color={Colors.accent} />
-                  <Text style={styles.fieldValue}>{user.paymentHandle}</Text>
-                </View>
-              ) : null}
+            <View style={styles.fieldRow}>
+              <Ionicons name="card-outline" size={18} color={Colors.accent} />
+              <Text style={styles.fieldValue}>
+                {user.paymentHandle || 'Not set'}
+              </Text>
             </View>
           )}
         </View>
@@ -190,13 +218,33 @@ export default function ProfileScreen() {
           </Pressable>
         )}
 
-        <Pressable
-          style={({ pressed }) => [styles.logoutBtn, pressed && { opacity: 0.85 }]}
-          onPress={handleLogout}
-        >
-          <Ionicons name="log-out-outline" size={18} color={Colors.danger} />
-          <Text style={styles.logoutText}>Sign Out</Text>
-        </Pressable>
+        {showLogoutConfirm ? (
+          <View style={styles.logoutConfirm}>
+            <Text style={styles.logoutConfirmText}>Are you sure you want to sign out?</Text>
+            <View style={styles.logoutConfirmActions}>
+              <Pressable
+                style={({ pressed }) => [styles.logoutCancelBtn, pressed && { opacity: 0.85 }]}
+                onPress={() => setShowLogoutConfirm(false)}
+              >
+                <Text style={styles.logoutCancelText}>Cancel</Text>
+              </Pressable>
+              <Pressable
+                style={({ pressed }) => [styles.logoutConfirmBtn, pressed && { opacity: 0.85 }]}
+                onPress={handleLogout}
+              >
+                <Text style={styles.logoutConfirmBtnText}>Sign Out</Text>
+              </Pressable>
+            </View>
+          </View>
+        ) : (
+          <Pressable
+            style={({ pressed }) => [styles.logoutBtn, pressed && { opacity: 0.85 }]}
+            onPress={() => setShowLogoutConfirm(true)}
+          >
+            <Ionicons name="log-out-outline" size={18} color={Colors.danger} />
+            <Text style={styles.logoutText}>Sign Out</Text>
+          </Pressable>
+        )}
       </ScrollView>
     </View>
   );
@@ -281,29 +329,72 @@ const styles = StyleSheet.create({
     letterSpacing: 0.5,
     marginBottom: 8,
   },
+  sectionHint: {
+    fontSize: 12,
+    fontFamily: 'Inter_400Regular',
+    color: Colors.textTertiary,
+    marginBottom: 10,
+    lineHeight: 17,
+  },
   fieldRow: {
     flexDirection: 'row',
-    alignItems: 'center',
+    alignItems: 'flex-start',
     gap: 8,
   },
   fieldValue: {
     fontSize: 15,
     fontFamily: 'Inter_400Regular',
     color: Colors.text,
+    flex: 1,
   },
-  fieldInput: {
-    height: 44,
+  dateRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+  },
+  dateInputWrap: {
+    flex: 1,
+    alignItems: 'center',
+  },
+  dateInput: {
+    height: 48,
+    width: '100%',
+    backgroundColor: Colors.background,
+    borderRadius: 10,
+    paddingHorizontal: 12,
+    fontSize: 18,
+    fontFamily: 'Inter_600SemiBold',
+    color: Colors.text,
+    borderWidth: 1,
+    borderColor: Colors.border,
+    textAlign: 'center',
+  },
+  dateLabel: {
+    fontSize: 10,
+    fontFamily: 'Inter_400Regular',
+    color: Colors.textTertiary,
+    marginTop: 4,
+  },
+  dateSep: {
+    fontSize: 20,
+    fontFamily: 'Inter_400Regular',
+    color: Colors.textTertiary,
+    marginBottom: 16,
+  },
+  paymentInput: {
+    minHeight: 120,
     backgroundColor: Colors.background,
     borderRadius: 10,
     paddingHorizontal: 14,
+    paddingTop: 12,
+    paddingBottom: 12,
     fontSize: 15,
     fontFamily: 'Inter_400Regular',
     color: Colors.text,
     borderWidth: 1,
     borderColor: Colors.border,
+    lineHeight: 22,
   },
-  paymentEdit: { gap: 10 },
-  paymentInfo: { gap: 6 },
   loginBtn: {
     backgroundColor: Colors.primary,
     paddingHorizontal: 32,
@@ -346,5 +437,50 @@ const styles = StyleSheet.create({
     fontSize: 15,
     fontFamily: 'Inter_600SemiBold',
     color: Colors.danger,
+  },
+  logoutConfirm: {
+    backgroundColor: Colors.dangerLight,
+    borderRadius: 14,
+    padding: 20,
+    marginTop: 12,
+    alignItems: 'center',
+    gap: 14,
+    borderWidth: 1,
+    borderColor: '#E8C4C4',
+  },
+  logoutConfirmText: {
+    fontSize: 15,
+    fontFamily: 'Inter_500Medium',
+    color: Colors.danger,
+    textAlign: 'center',
+  },
+  logoutConfirmActions: {
+    flexDirection: 'row',
+    gap: 10,
+    width: '100%',
+  },
+  logoutCancelBtn: {
+    flex: 1,
+    paddingVertical: 12,
+    alignItems: 'center',
+    borderRadius: 10,
+    backgroundColor: Colors.card,
+  },
+  logoutCancelText: {
+    fontSize: 14,
+    fontFamily: 'Inter_600SemiBold',
+    color: Colors.textSecondary,
+  },
+  logoutConfirmBtn: {
+    flex: 1,
+    paddingVertical: 12,
+    alignItems: 'center',
+    borderRadius: 10,
+    backgroundColor: Colors.danger,
+  },
+  logoutConfirmBtnText: {
+    fontSize: 14,
+    fontFamily: 'Inter_600SemiBold',
+    color: Colors.white,
   },
 });
