@@ -43,7 +43,6 @@
     "expo-system-ui": "~6.0.9",
     "expo-web-browser": "~15.0.10",
     "express": "^5.0.1",
-    "express-openid-connect": "^2.19.4",
     "http-proxy-middleware": "^3.0.5",
     "pg": "^8.16.3",
     "react": "19.1.0",

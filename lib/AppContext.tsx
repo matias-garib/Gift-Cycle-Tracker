@@ -3,20 +3,12 @@ import type { User, Group, Gift, WishlistItem, Payment, GiftPhase } from './type
 import * as Storage from './storage';
 import { generateId, generateInviteCode, getAvatarColor } from './helpers';
 
-interface OAuthUser {
-  id: string;
-  name: string;
-  email: string;
-  picture?: string | null;
-}
-
 interface AppContextValue {
   user: User | null;
   groups: Group[];
   gifts: Gift[];
   loading: boolean;
   login: (email: string, name: string) => Promise<void>;
-  loginWithOAuth: (oauthUser: OAuthUser) => Promise<void>;
   logout: () => Promise<void>;
   updateProfile: (updates: Partial<User>) => Promise<void>;
   addProfileWishlistItem: (item: { title: string; url?: string }) => Promise<void>;
@@ -94,33 +86,6 @@ export function AppProvider({ children }: { children: ReactNode }) {
       };
       await Storage.saveUser(existing);
       setAllUsers((prev) => [...prev, existing!]);
-    }
-    await Storage.setCurrentUser(existing);
-    setUser(existing);
-  }, []);
-
-  const loginWithOAuth = useCallback(async (oauthUser: OAuthUser) => {
-    const users = await Storage.getUsers();
-    let existing = users.find((u) => u.email === oauthUser.email);
-    if (!existing) {
-      existing = {
-        id: oauthUser.id || generateId(),
-        name: oauthUser.name,
-        email: oauthUser.email,
-        birthday: '',
-        paymentMethod: '',
-        paymentHandle: '',
-        avatarColor: getAvatarColor(users.length),
-        profileImage: oauthUser.picture || undefined,
-      };
-      await Storage.saveUser(existing);
-      setAllUsers((prev) => [...prev, existing!]);
-    } else {
-      if (oauthUser.picture && !existing.profileImage) {
-        existing = { ...existing, profileImage: oauthUser.picture };
-        await Storage.saveUser(existing);
-        setAllUsers((prev) => prev.map((u) => (u.id === existing!.id ? existing! : u)));
-      }
     }
     await Storage.setCurrentUser(existing);
     setUser(existing);
@@ -417,14 +382,14 @@ export function AppProvider({ children }: { children: ReactNode }) {
 
   const value = useMemo(() => ({
     user, groups, gifts, loading,
-    login, loginWithOAuth, logout, updateProfile,
+    login, logout, updateProfile,
     addProfileWishlistItem, removeProfileWishlistItem,
     createGroup, updateGroupImage, joinGroup, addMemberToGroup, removeMemberFromGroup,
     createGift, addWishlistItem, removeWishlistItem,
     markPurchased, markPaid,
     getGroupById, getGiftById, getGiftsForGroup, getUserById,
     seedDemoData,
-  }), [user, groups, gifts, loading, login, loginWithOAuth, logout, updateProfile, addProfileWishlistItem, removeProfileWishlistItem, createGroup, updateGroupImage, joinGroup, addMemberToGroup, removeMemberFromGroup, createGift, addWishlistItem, removeWishlistItem, markPurchased, markPaid, getGroupById, getGiftById, getGiftsForGroup, getUserById, seedDemoData]);
+  }), [user, groups, gifts, loading, login, logout, updateProfile, addProfileWishlistItem, removeProfileWishlistItem, createGroup, updateGroupImage, joinGroup, addMemberToGroup, removeMemberFromGroup, createGift, addWishlistItem, removeWishlistItem, markPurchased, markPaid, getGroupById, getGiftById, getGiftsForGroup, getUserById, seedDemoData]);
 
   return <AppContext.Provider value={value}>{children}</AppContext.Provider>;
 }
