@@ -10,6 +10,31 @@ import * as Haptics from 'expo-haptics';
 import Colors from '@/constants/colors';
 import { useApp } from '@/lib/AppContext';
 
+const i18n = {
+  en: {
+    title: 'Welcome to GiftCycle',
+    subtitle: 'Coordinate birthday gifts with your friends, without the WhatsApp chaos.',
+    namePlaceholder: 'Your Name',
+    emailPlaceholder: 'Email Address',
+    createAccount: 'Create Account',
+    errorAllFields: 'Please fill in all fields',
+    errorValidEmail: 'Please enter a valid email',
+    errorGeneric: 'Something went wrong',
+  },
+  es: {
+    title: 'Bienvenido a GiftCycle',
+    subtitle: 'Coordina regalos de cumplea\u00f1os con tus amigos, sin el caos de WhatsApp.',
+    namePlaceholder: 'Tu Nombre',
+    emailPlaceholder: 'Correo Electr\u00f3nico',
+    createAccount: 'Crear Cuenta',
+    errorAllFields: 'Por favor, llena todos los campos',
+    errorValidEmail: 'Por favor, ingresa un correo v\u00e1lido',
+    errorGeneric: 'Algo sali\u00f3 mal',
+  },
+} as const;
+
+type Lang = keyof typeof i18n;
+
 export default function AuthScreen() {
   const insets = useSafeAreaInsets();
   const { login } = useApp();
@@ -17,14 +42,23 @@ export default function AuthScreen() {
   const [email, setEmail] = useState('');
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState('');
+  const [lang, setLang] = useState<Lang>('en');
+
+  const t = i18n[lang];
+
+  const toggleLang = () => {
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    setLang((prev) => (prev === 'en' ? 'es' : 'en'));
+    setError('');
+  };
 
   const handleSubmit = async () => {
     if (!name.trim() || !email.trim()) {
-      setError('Please fill in all fields');
+      setError(t.errorAllFields);
       return;
     }
     if (!email.includes('@')) {
-      setError('Please enter a valid email');
+      setError(t.errorValidEmail);
       return;
     }
     setError('');
@@ -34,7 +68,7 @@ export default function AuthScreen() {
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
       router.replace('/(tabs)');
     } catch {
-      setError('Something went wrong');
+      setError(t.errorGeneric);
     } finally {
       setSubmitting(false);
     }
@@ -49,23 +83,27 @@ export default function AuthScreen() {
         contentContainerStyle={styles.scroll}
         keyboardShouldPersistTaps="handled"
       >
+        <Pressable style={styles.langToggle} onPress={toggleLang}>
+          <Text style={[styles.langOption, lang === 'en' && styles.langActive]}>EN</Text>
+          <View style={styles.langDivider} />
+          <Text style={[styles.langOption, lang === 'es' && styles.langActive]}>ES</Text>
+        </Pressable>
+
         <View style={styles.iconWrap}>
           <View style={styles.iconCircle}>
             <Ionicons name="gift" size={40} color={Colors.white} />
           </View>
         </View>
 
-        <Text style={styles.title}>Welcome to GiftCycle</Text>
-        <Text style={styles.subtitle}>
-          Coordinate birthday gifts with your friends, without the WhatsApp chaos.
-        </Text>
+        <Text style={styles.title}>{t.title}</Text>
+        <Text style={styles.subtitle}>{t.subtitle}</Text>
 
         <View style={styles.form}>
           <View style={styles.inputWrap}>
             <Ionicons name="person-outline" size={20} color={Colors.textTertiary} style={styles.inputIcon} />
             <TextInput
               style={styles.input}
-              placeholder="Your Name"
+              placeholder={t.namePlaceholder}
               placeholderTextColor={Colors.textTertiary}
               value={name}
               onChangeText={setName}
@@ -77,7 +115,7 @@ export default function AuthScreen() {
             <Ionicons name="mail-outline" size={20} color={Colors.textTertiary} style={styles.inputIcon} />
             <TextInput
               style={styles.input}
-              placeholder="Email Address"
+              placeholder={t.emailPlaceholder}
               placeholderTextColor={Colors.textTertiary}
               value={email}
               onChangeText={setEmail}
@@ -105,7 +143,7 @@ export default function AuthScreen() {
             {submitting ? (
               <ActivityIndicator color={Colors.white} />
             ) : (
-              <Text style={styles.buttonText}>Create Account</Text>
+              <Text style={styles.buttonText}>{t.createAccount}</Text>
             )}
           </Pressable>
         </View>
@@ -123,6 +161,36 @@ const styles = StyleSheet.create({
     flexGrow: 1,
     justifyContent: 'center',
     padding: 24,
+  },
+  langToggle: {
+    flexDirection: 'row',
+    alignSelf: 'center',
+    alignItems: 'center',
+    backgroundColor: Colors.card,
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: Colors.cardBorder,
+    paddingHorizontal: 4,
+    paddingVertical: 4,
+    marginBottom: 24,
+  },
+  langOption: {
+    fontSize: 13,
+    fontFamily: 'Inter_600SemiBold',
+    color: Colors.textTertiary,
+    paddingHorizontal: 14,
+    paddingVertical: 6,
+    borderRadius: 7,
+    overflow: 'hidden',
+  },
+  langActive: {
+    color: Colors.white,
+    backgroundColor: Colors.primary,
+  },
+  langDivider: {
+    width: 1,
+    height: 16,
+    backgroundColor: Colors.border,
   },
   iconWrap: {
     alignItems: 'center',
