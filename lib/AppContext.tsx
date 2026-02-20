@@ -57,13 +57,23 @@ export function AppProvider({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     (async () => {
-      const [savedUser, savedGroups, savedGifts, savedUsers] = await Promise.all([
+      const savedUser = await Storage.getCurrentUser();
+      const didReset = await Storage.getResetFlag();
+      if (!didReset) {
+        await Storage.clearAll();
+        if (savedUser) {
+          await Storage.setCurrentUser(savedUser);
+          await Storage.saveUser(savedUser);
+        }
+        await Storage.setResetFlag();
+      }
+      const [currentUser, savedGroups, savedGifts, savedUsers] = await Promise.all([
         Storage.getCurrentUser(),
         Storage.getGroups(),
         Storage.getGifts(),
         Storage.getUsers(),
       ]);
-      if (savedUser) setUser(savedUser);
+      if (currentUser) setUser(currentUser);
       setGroups(savedGroups);
       setGifts(savedGifts);
       setAllUsers(savedUsers);

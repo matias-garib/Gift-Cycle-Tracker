@@ -58,3 +58,14 @@ export async function saveGifts(gifts: Gift[]): Promise<void> {
 export async function clearAll(): Promise<void> {
   await AsyncStorage.multiRemove(Object.values(KEYS));
 }
+
+const RESET_KEY = 'giftcycle_data_reset_v1';
+
+export async function getResetFlag(): Promise<boolean> {
+  const val = await AsyncStorage.getItem(RESET_KEY);
+  return val === 'true';
+}
+
+export async function setResetFlag(): Promise<void> {
+  await AsyncStorage.setItem(RESET_KEY, 'true');
+}
