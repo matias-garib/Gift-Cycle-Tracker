@@ -296,6 +296,14 @@ export function AppProvider({ children }: { children: ReactNode }) {
 
   const seedDemoData = useCallback(async () => {
     if (!user) return;
+
+    await Storage.clearAll();
+    await Storage.setCurrentUser(user);
+    await Storage.saveUser(user);
+    setGroups([]);
+    setGifts([]);
+    setAllUsers([user]);
+
     const demoMembers: User[] = DEMO_NAMES.slice(0, 19).map((name, i) => ({
       id: generateId(),
       name,
@@ -372,13 +380,13 @@ export function AppProvider({ children }: { children: ReactNode }) {
     }
     setAllUsers((prev) => [...prev, ...demoMembers]);
 
-    const updatedGroups = [...groups, group];
-    const updatedGifts = [...gifts, ...demoGifts];
-    setGroups(updatedGroups);
-    setGifts(updatedGifts);
-    await Storage.saveGroups(updatedGroups);
-    await Storage.saveGifts(updatedGifts);
-  }, [user, groups, gifts]);
+    const newGroups = [group];
+    const newGifts = [...demoGifts];
+    setGroups(newGroups);
+    setGifts(newGifts);
+    await Storage.saveGroups(newGroups);
+    await Storage.saveGifts(newGifts);
+  }, [user]);
 
   const value = useMemo(() => ({
     user, groups, gifts, loading,
