@@ -1,6 +1,6 @@
 import React, { useMemo } from 'react';
 import {
-  View, Text, ScrollView, StyleSheet, Platform,
+  View, Text, ScrollView, StyleSheet, Platform, Image,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
@@ -8,38 +8,53 @@ import Colors from '@/constants/colors';
 import { useApp } from '@/lib/AppContext';
 import { getInitials } from '@/lib/helpers';
 
-interface MemberStat {
+interface SpeedStat {
   userId: string;
   name: string;
   avatarColor: string;
-  totalPaid: number;
-  totalOwed: number;
-  avgPayTimeHours: number;
-  onTimeCount: number;
-  lateCount: number;
+  profileImage?: string;
+  avgSpeedHours: number;
+  payCount: number;
+}
+
+function formatSpeed(hours: number): string {
+  if (hours < 1) {
+    const mins = Math.round(hours * 60);
+    return mins <= 1 ? 'under 1 min' : `${mins} min`;
+  }
+  if (hours < 24) {
+    return `${Math.round(hours)}h`;
+  }
+  const days = Math.round(hours / 24);
+  return `${days}d`;
 }
 
 export default function StatsScreen() {
   const insets = useSafeAreaInsets();
   const { user, groups, gifts } = useApp();
 
-  const stats = useMemo(() => {
-    const memberMap = new Map<string, MemberStat>();
+  const myGroupMemberIds = useMemo(() => {
+    const ids = new Set<string>();
+    groups.forEach((g) => g.members.forEach((m) => ids.add(m.id)));
+    return ids;
+  }, [groups]);
 
-    const allMembers = groups.flatMap((g) => g.members);
-    allMembers.forEach((m) => {
-      if (!memberMap.has(m.id)) {
-        memberMap.set(m.id, {
-          userId: m.id,
-          name: m.name,
-          avatarColor: m.avatarColor,
-          totalPaid: 0,
-          totalOwed: 0,
-          avgPayTimeHours: 0,
-          onTimeCount: 0,
-          lateCount: 0,
-        });
-      }
+  const speedStats = useMemo(() => {
+    const memberMap = new Map<string, SpeedStat>();
+
+    groups.forEach((g) => {
+      g.members.forEach((m) => {
+        if (!memberMap.has(m.id)) {
+          memberMap.set(m.id, {
+            userId: m.id,
+            name: m.name,
+            avatarColor: m.avatarColor,
+            profileImage: m.profileImage,
+            avgSpeedHours: 0,
+            payCount: 0,
+          });
+        }
+      });
     });
 
     gifts.forEach((gift) => {
@@ -47,50 +62,40 @@ export default function StatsScreen() {
       const purchaseTime = new Date(gift.purchasedAt).getTime();
 
       gift.payments.forEach((payment) => {
+        if (!myGroupMemberIds.has(payment.userId)) return;
         const stat = memberMap.get(payment.userId);
         if (!stat) return;
-        stat.totalOwed += payment.amount;
-        if (payment.paid) {
-          stat.totalPaid += payment.amount;
-          if (payment.paidAt) {
-            const payTime = new Date(payment.paidAt).getTime();
-            const hoursToPayment = (payTime - purchaseTime) / (1000 * 60 * 60);
-            stat.avgPayTimeHours =
-              (stat.avgPayTimeHours * stat.onTimeCount + hoursToPayment) /
-              (stat.onTimeCount + 1);
-            if (hoursToPayment <= 48) {
-              stat.onTimeCount++;
-            } else {
-              stat.lateCount++;
-            }
+
+        if (payment.paid && payment.paidAt) {
+          const payTime = new Date(payment.paidAt).getTime();
+          const hoursToPayment = (payTime - purchaseTime) / (1000 * 60 * 60);
+          if (hoursToPayment >= 0) {
+            stat.avgSpeedHours =
+              (stat.avgSpeedHours * stat.payCount + hoursToPayment) /
+              (stat.payCount + 1);
+            stat.payCount++;
           }
-        } else {
-          stat.lateCount++;
         }
       });
     });
 
-    return Array.from(memberMap.values()).filter(
-      (s) => s.totalOwed > 0 || s.totalPaid > 0
-    );
-  }, [groups, gifts]);
+    return Array.from(memberMap.values()).filter((s) => s.payCount > 0);
+  }, [groups, gifts, myGroupMemberIds]);
 
-  const fastestPayers = useMemo(
+  const hallOfFame = useMemo(
     () =>
-      [...stats]
-        .filter((s) => s.onTimeCount > 0)
-        .sort((a, b) => a.avgPayTimeHours - b.avgPayTimeHours)
+      [...speedStats]
+        .sort((a, b) => a.avgSpeedHours - b.avgSpeedHours)
         .slice(0, 5),
-    [stats]
+    [speedStats]
   );
 
-  const serialLaggers = useMemo(
+  const hallOfShame = useMemo(
     () =>
-      [...stats]
-        .filter((s) => s.lateCount > 0)
-        .sort((a, b) => b.lateCount - a.lateCount)
+      [...speedStats]
+        .sort((a, b) => b.avgSpeedHours - a.avgSpeedHours)
         .slice(0, 5),
-    [stats]
+    [speedStats]
   );
 
   const webTop = Platform.OS === 'web' ? 67 : 0;
@@ -105,15 +110,17 @@ export default function StatsScreen() {
         contentInsetAdjustmentBehavior="automatic"
         showsVerticalScrollIndicator={false}
       >
-        <Text style={styles.title}>Wall of Fame & Shame</Text>
-        <Text style={styles.subtitle}>See who pays up and who keeps everyone waiting</Text>
+        <Text style={styles.title}>Speed Rankings</Text>
+        <Text style={styles.subtitle}>
+          Average time from purchase to clicking "I have paid"
+        </Text>
 
-        {stats.length === 0 ? (
+        {speedStats.length === 0 ? (
           <View style={styles.empty}>
-            <Ionicons name="trophy-outline" size={48} color={Colors.textTertiary} />
-            <Text style={styles.emptyTitle}>No stats yet</Text>
+            <Ionicons name="speedometer-outline" size={48} color={Colors.textTertiary} />
+            <Text style={styles.emptyTitle}>No speed data yet</Text>
             <Text style={styles.emptyText}>
-              Stats will appear once gifts are purchased and payments begin
+              Rankings will appear once gifts are purchased and people start paying
             </Text>
           </View>
         ) : (
@@ -123,13 +130,13 @@ export default function StatsScreen() {
                 <Ionicons name="trophy" size={20} color={Colors.warning} />
                 <Text style={styles.sectionTitle}>Hall of Fame</Text>
               </View>
-              <Text style={styles.sectionSub}>Fastest payers in the group</Text>
+              <Text style={styles.sectionSub}>Fastest average payment speed</Text>
 
-              {fastestPayers.length === 0 ? (
-                <Text style={styles.noData}>No fast payers yet</Text>
+              {hallOfFame.length === 0 ? (
+                <Text style={styles.noData}>No data yet</Text>
               ) : (
                 <View style={styles.list}>
-                  {fastestPayers.map((stat, i) => (
+                  {hallOfFame.map((stat, i) => (
                     <View key={stat.userId} style={styles.statCard}>
                       <View style={styles.rankWrap}>
                         <Text style={[
@@ -141,21 +148,25 @@ export default function StatsScreen() {
                           {i + 1}
                         </Text>
                       </View>
-                      <View style={[styles.statAvatar, { backgroundColor: stat.avatarColor }]}>
-                        <Text style={styles.statAvatarText}>{getInitials(stat.name)}</Text>
-                      </View>
+                      {stat.profileImage ? (
+                        <Image source={{ uri: stat.profileImage }} style={styles.statAvatarImg} />
+                      ) : (
+                        <View style={[styles.statAvatar, { backgroundColor: stat.avatarColor }]}>
+                          <Text style={styles.statAvatarText}>{getInitials(stat.name)}</Text>
+                        </View>
+                      )}
                       <View style={styles.statInfo}>
                         <Text style={styles.statName}>
                           {stat.name}
                           {stat.userId === user?.id ? ' (You)' : ''}
                         </Text>
                         <Text style={styles.statDetail}>
-                          Avg: {stat.avgPayTimeHours < 1 ? 'under 1h' : `${Math.round(stat.avgPayTimeHours)}h`}
+                          Avg speed: {formatSpeed(stat.avgSpeedHours)}
                         </Text>
                       </View>
                       <View style={styles.statBadge}>
                         <Ionicons name="flash" size={14} color={Colors.warning} />
-                        <Text style={styles.statBadgeText}>{stat.onTimeCount}x</Text>
+                        <Text style={styles.statBadgeText}>{stat.payCount}x</Text>
                       </View>
                     </View>
                   ))}
@@ -165,70 +176,44 @@ export default function StatsScreen() {
 
             <View style={styles.section}>
               <View style={styles.sectionHeader}>
-                <Ionicons name="time" size={20} color={Colors.danger} />
-                <Text style={styles.sectionTitle}>Wall of Shame</Text>
+                <Ionicons name="hourglass" size={20} color={Colors.danger} />
+                <Text style={styles.sectionTitle}>Hall of Shame</Text>
               </View>
-              <Text style={styles.sectionSub}>Serial laggers who keep everyone waiting</Text>
+              <Text style={styles.sectionSub}>Slowest average payment speed</Text>
 
-              {serialLaggers.length === 0 ? (
-                <Text style={styles.noData}>No laggers yet - everyone pays on time!</Text>
+              {hallOfShame.length === 0 ? (
+                <Text style={styles.noData}>No slow payers yet</Text>
               ) : (
                 <View style={styles.list}>
-                  {serialLaggers.map((stat, i) => (
+                  {hallOfShame.map((stat, i) => (
                     <View key={stat.userId} style={[styles.statCard, styles.shameCard]}>
                       <View style={styles.rankWrap}>
                         <Text style={styles.rankShame}>{i + 1}</Text>
                       </View>
-                      <View style={[styles.statAvatar, { backgroundColor: stat.avatarColor }]}>
-                        <Text style={styles.statAvatarText}>{getInitials(stat.name)}</Text>
-                      </View>
+                      {stat.profileImage ? (
+                        <Image source={{ uri: stat.profileImage }} style={styles.statAvatarImg} />
+                      ) : (
+                        <View style={[styles.statAvatar, { backgroundColor: stat.avatarColor }]}>
+                          <Text style={styles.statAvatarText}>{getInitials(stat.name)}</Text>
+                        </View>
+                      )}
                       <View style={styles.statInfo}>
                         <Text style={styles.statName}>
                           {stat.name}
                           {stat.userId === user?.id ? ' (You)' : ''}
                         </Text>
                         <Text style={styles.statDetail}>
-                          ${stat.totalOwed.toFixed(2)} total owed
+                          Avg speed: {formatSpeed(stat.avgSpeedHours)}
                         </Text>
                       </View>
                       <View style={[styles.statBadge, styles.shameBadge]}>
-                        <Ionicons name="alert-circle" size={14} color={Colors.danger} />
-                        <Text style={[styles.statBadgeText, styles.shameBadgeText]}>{stat.lateCount}x late</Text>
+                        <Ionicons name="time" size={14} color={Colors.danger} />
+                        <Text style={[styles.statBadgeText, styles.shameBadgeText]}>{stat.payCount}x</Text>
                       </View>
                     </View>
                   ))}
                 </View>
               )}
-            </View>
-
-            <View style={styles.section}>
-              <View style={styles.sectionHeader}>
-                <Ionicons name="bar-chart" size={20} color={Colors.primary} />
-                <Text style={styles.sectionTitle}>Overview</Text>
-              </View>
-
-              <View style={styles.overviewGrid}>
-                <View style={styles.overviewCard}>
-                  <Text style={styles.overviewNum}>{gifts.length}</Text>
-                  <Text style={styles.overviewLabel}>Total Gifts</Text>
-                </View>
-                <View style={styles.overviewCard}>
-                  <Text style={styles.overviewNum}>
-                    ${gifts.reduce((sum, g) => sum + (g.totalCost || 0), 0).toFixed(0)}
-                  </Text>
-                  <Text style={styles.overviewLabel}>Total Spent</Text>
-                </View>
-                <View style={styles.overviewCard}>
-                  <Text style={styles.overviewNum}>{stats.length}</Text>
-                  <Text style={styles.overviewLabel}>Members</Text>
-                </View>
-                <View style={styles.overviewCard}>
-                  <Text style={styles.overviewNum}>
-                    {gifts.filter((g) => g.phase === 'settlement' && g.payments.every((p) => p.paid)).length}
-                  </Text>
-                  <Text style={styles.overviewLabel}>Settled</Text>
-                </View>
-              </View>
             </View>
           </>
         )}
@@ -334,6 +319,12 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     marginLeft: 8,
   },
+  statAvatarImg: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    marginLeft: 8,
+  },
   statAvatarText: {
     fontSize: 13,
     fontFamily: 'Inter_600SemiBold',
@@ -370,32 +361,5 @@ const styles = StyleSheet.create({
   },
   shameBadgeText: {
     color: Colors.danger,
-  },
-  overviewGrid: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: 10,
-    marginTop: 4,
-  },
-  overviewCard: {
-    flex: 1,
-    minWidth: '45%',
-    backgroundColor: Colors.card,
-    borderRadius: 14,
-    padding: 16,
-    alignItems: 'center',
-    borderWidth: 1,
-    borderColor: Colors.cardBorder,
-  },
-  overviewNum: {
-    fontSize: 24,
-    fontFamily: 'Inter_700Bold',
-    color: Colors.primary,
-  },
-  overviewLabel: {
-    fontSize: 12,
-    fontFamily: 'Inter_400Regular',
-    color: Colors.textSecondary,
-    marginTop: 4,
   },
 });

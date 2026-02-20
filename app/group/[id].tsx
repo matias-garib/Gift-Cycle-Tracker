@@ -1,23 +1,26 @@
 import React, { useState, useMemo } from 'react';
 import {
   View, Text, ScrollView, Pressable, StyleSheet, Platform,
-  Alert, Share, Modal, TextInput, ActivityIndicator,
+  Alert, Share, Modal, TextInput, ActivityIndicator, Image, Linking,
 } from 'react-native';
 import { router, useLocalSearchParams } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import * as Haptics from 'expo-haptics';
+import * as ImagePicker from 'expo-image-picker';
 import Colors from '@/constants/colors';
 import { useApp } from '@/lib/AppContext';
-import { getInitials, getUpcomingBirthdays, formatDate, getDaysUntilBirthday } from '@/lib/helpers';
+import { getInitials, getUpcomingBirthdays, formatDate } from '@/lib/helpers';
 
 export default function GroupDetailScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const insets = useSafeAreaInsets();
-  const { user, getGroupById, getGiftsForGroup, createGift } = useApp();
+  const { user, getGroupById, getGiftsForGroup, createGift, updateGroupImage, removeMemberFromGroup } = useApp();
   const [showNewGift, setShowNewGift] = useState(false);
   const [selectedPerson, setSelectedPerson] = useState('');
   const [creating, setCreating] = useState(false);
+  const [inviteExpanded, setInviteExpanded] = useState(false);
+  const [removingMember, setRemovingMember] = useState<string | null>(null);
 
   const group = getGroupById(id!);
   const groupGifts = getGiftsForGroup(id!);
@@ -41,13 +44,40 @@ export default function GroupDetailScreen() {
     );
   }
 
+  const isOrganizer = group.organizerId === user.id;
+
   const handleShare = async () => {
+    const domain = process.env.EXPO_PUBLIC_DOMAIN || 'giftcycle.replit.app';
+    const inviteUrl = `https://${domain}/join/${group.inviteCode}`;
     try {
       await Share.share({
-        message: `Join my GiftCycle group "${group.name}"! Use invite code: ${group.inviteCode}`,
+        message: `Join my GiftCycle group "${group.name}"!\n\nTap the link to join:\n${inviteUrl}\n\nOr use code: ${group.inviteCode}`,
       });
-    } catch {
+    } catch {}
+  };
+
+  const handlePickGroupImage = async () => {
+    const result = await ImagePicker.launchImageLibraryAsync({
+      mediaTypes: ['images'],
+      allowsEditing: true,
+      aspect: [1, 1],
+      quality: 0.7,
+    });
+    if (!result.canceled && result.assets[0]) {
+      await updateGroupImage(group.id, result.assets[0].uri);
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
     }
+  };
+
+  const handleRemoveMember = async (memberId: string) => {
+    setRemovingMember(memberId);
+  };
+
+  const confirmRemoveMember = async () => {
+    if (!removingMember) return;
+    await removeMemberFromGroup(group.id, removingMember);
+    Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+    setRemovingMember(null);
   };
 
   const handleCreateGift = async () => {
@@ -60,13 +90,13 @@ export default function GroupDetailScreen() {
       setSelectedPerson('');
       router.push(`/gift/${gift.id}`);
     } catch {
-      Alert.alert('Error', 'Could not create gift');
     } finally {
       setCreating(false);
     }
   };
 
   const webTop = Platform.OS === 'web' ? 67 : 0;
+  const removingMemberUser = removingMember ? group.members.find(m => m.id === removingMember) : null;
 
   return (
     <View style={styles.container}>
@@ -85,29 +115,63 @@ export default function GroupDetailScreen() {
         </Pressable>
 
         <View style={styles.headerCard}>
-          <View style={styles.groupIconBig}>
-            <Ionicons name="people" size={28} color={Colors.primary} />
-          </View>
+          <Pressable onPress={handlePickGroupImage} style={styles.groupImageWrap}>
+            {group.groupImage ? (
+              <Image source={{ uri: group.groupImage }} style={styles.groupImageBig} />
+            ) : (
+              <View style={styles.groupIconBig}>
+                <Ionicons name="people" size={28} color={Colors.primary} />
+              </View>
+            )}
+            <View style={styles.cameraOverlay}>
+              <Ionicons name="camera" size={14} color={Colors.white} />
+            </View>
+          </Pressable>
           <Text style={styles.groupName}>{group.name}</Text>
           <Text style={styles.memberCount}>
             {group.members.length} member{group.members.length !== 1 ? 's' : ''}
           </Text>
 
-          <View style={styles.inviteRow}>
-            <View style={styles.inviteCodeBox}>
-              <Text style={styles.inviteLabel}>Invite Code</Text>
-              <Text style={styles.inviteCode}>{group.inviteCode}</Text>
+          <Pressable
+            style={styles.inviteToggle}
+            onPress={() => {
+              setInviteExpanded(!inviteExpanded);
+              Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+            }}
+          >
+            <Ionicons name="link-outline" size={16} color={Colors.textSecondary} />
+            <Text style={styles.inviteToggleText}>
+              {inviteExpanded ? 'Hide invite options' : 'Invite people'}
+            </Text>
+            <Ionicons
+              name={inviteExpanded ? 'chevron-up' : 'chevron-down'}
+              size={16}
+              color={Colors.textSecondary}
+            />
+          </Pressable>
+
+          {inviteExpanded && (
+            <View style={styles.inviteContent}>
+              <View style={styles.inviteRow}>
+                <View style={styles.inviteCodeBox}>
+                  <Text style={styles.inviteLabel}>Invite Code</Text>
+                  <Text style={styles.inviteCode}>{group.inviteCode}</Text>
+                </View>
+                <Pressable
+                  style={({ pressed }) => [styles.shareBtn, pressed && { opacity: 0.85 }]}
+                  onPress={() => {
+                    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+                    handleShare();
+                  }}
+                >
+                  <Ionicons name="share-outline" size={18} color={Colors.white} />
+                </Pressable>
+              </View>
+              <Text style={styles.inviteHint}>
+                Share the invite link - people who open it will be added automatically
+              </Text>
             </View>
-            <Pressable
-              style={({ pressed }) => [styles.shareBtn, pressed && { opacity: 0.85 }]}
-              onPress={() => {
-                Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-                handleShare();
-              }}
-            >
-              <Ionicons name="share-outline" size={18} color={Colors.white} />
-            </Pressable>
-          </View>
+          )}
         </View>
 
         {upcomingBirthdays.length > 0 && (
@@ -115,9 +179,13 @@ export default function GroupDetailScreen() {
             <Text style={styles.sectionTitle}>Upcoming Birthdays</Text>
             {upcomingBirthdays.map((member) => (
               <View key={member.id} style={styles.birthdayRow}>
-                <View style={[styles.miniAvatar, { backgroundColor: member.avatarColor }]}>
-                  <Text style={styles.miniAvatarText}>{getInitials(member.name)}</Text>
-                </View>
+                {member.profileImage ? (
+                  <Image source={{ uri: member.profileImage }} style={styles.miniAvatarImg} />
+                ) : (
+                  <View style={[styles.miniAvatar, { backgroundColor: member.avatarColor }]}>
+                    <Text style={styles.miniAvatarText}>{getInitials(member.name)}</Text>
+                  </View>
+                )}
                 <View style={{ flex: 1 }}>
                   <Text style={styles.memberName}>{member.name}</Text>
                   <Text style={styles.memberDate}>{formatDate(member.birthday)}</Text>
@@ -204,21 +272,48 @@ export default function GroupDetailScreen() {
         </View>
 
         <View style={styles.section}>
-          <Text style={styles.sectionTitle}>Members</Text>
+          <View style={styles.sectionHeader}>
+            <Text style={styles.sectionTitle}>Members</Text>
+            {isOrganizer && (
+              <View style={styles.organizerBadge}>
+                <Ionicons name="shield-checkmark" size={12} color={Colors.primary} />
+                <Text style={styles.organizerText}>Organizer</Text>
+              </View>
+            )}
+          </View>
           <View style={styles.memberList}>
             {group.members.map((member) => (
               <View key={member.id} style={styles.memberRow}>
-                <View style={[styles.miniAvatar, { backgroundColor: member.avatarColor }]}>
-                  <Text style={styles.miniAvatarText}>{getInitials(member.name)}</Text>
-                </View>
+                {member.profileImage ? (
+                  <Image source={{ uri: member.profileImage }} style={styles.miniAvatarImg} />
+                ) : (
+                  <View style={[styles.miniAvatar, { backgroundColor: member.avatarColor }]}>
+                    <Text style={styles.miniAvatarText}>{getInitials(member.name)}</Text>
+                  </View>
+                )}
                 <View style={{ flex: 1 }}>
-                  <Text style={styles.memberName}>
-                    {member.name}{member.id === user.id ? ' (You)' : ''}
-                  </Text>
+                  <View style={styles.memberNameRow}>
+                    <Text style={styles.memberName}>
+                      {member.name}{member.id === user.id ? ' (You)' : ''}
+                    </Text>
+                    {member.id === group.organizerId && (
+                      <View style={styles.organizerSmallBadge}>
+                        <Ionicons name="shield-checkmark" size={10} color={Colors.primary} />
+                      </View>
+                    )}
+                  </View>
                   {member.birthday ? (
                     <Text style={styles.memberDate}>{formatDate(member.birthday)}</Text>
                   ) : null}
                 </View>
+                {isOrganizer && member.id !== user.id && (
+                  <Pressable
+                    onPress={() => handleRemoveMember(member.id)}
+                    style={({ pressed }) => [styles.removeBtn, pressed && { opacity: 0.6 }]}
+                  >
+                    <Ionicons name="close-circle" size={20} color={Colors.danger} />
+                  </Pressable>
+                )}
               </View>
             ))}
           </View>
@@ -242,9 +337,13 @@ export default function GroupDetailScreen() {
                     ]}
                     onPress={() => setSelectedPerson(member.id)}
                   >
-                    <View style={[styles.personAvatar, { backgroundColor: member.avatarColor }]}>
-                      <Text style={styles.personAvatarText}>{getInitials(member.name)}</Text>
-                    </View>
+                    {member.profileImage ? (
+                      <Image source={{ uri: member.profileImage }} style={styles.personAvatarImg} />
+                    ) : (
+                      <View style={[styles.personAvatar, { backgroundColor: member.avatarColor }]}>
+                        <Text style={styles.personAvatarText}>{getInitials(member.name)}</Text>
+                      </View>
+                    )}
                     <Text style={styles.personName}>{member.name}</Text>
                     {selectedPerson === member.id && (
                       <Ionicons name="checkmark-circle" size={22} color={Colors.primary} />
@@ -278,6 +377,32 @@ export default function GroupDetailScreen() {
           </Pressable>
         </Pressable>
       </Modal>
+
+      <Modal visible={!!removingMember} transparent animationType="fade">
+        <Pressable style={styles.modalOverlay} onPress={() => setRemovingMember(null)}>
+          <Pressable style={styles.confirmModal} onPress={(e) => e.stopPropagation()}>
+            <Ionicons name="alert-circle" size={36} color={Colors.danger} />
+            <Text style={styles.confirmTitle}>Remove Member</Text>
+            <Text style={styles.confirmText}>
+              Remove {removingMemberUser?.name} from this group? This can't be undone.
+            </Text>
+            <View style={styles.modalActions}>
+              <Pressable
+                style={({ pressed }) => [styles.modalCancel, pressed && { opacity: 0.7 }]}
+                onPress={() => setRemovingMember(null)}
+              >
+                <Text style={styles.modalCancelText}>Cancel</Text>
+              </Pressable>
+              <Pressable
+                style={({ pressed }) => [styles.modalSubmitDanger, pressed && { opacity: 0.85 }]}
+                onPress={confirmRemoveMember}
+              >
+                <Text style={styles.modalSubmitText}>Remove</Text>
+              </Pressable>
+            </View>
+          </Pressable>
+        </Pressable>
+      </Modal>
     </View>
   );
 }
@@ -298,14 +423,35 @@ const styles = StyleSheet.create({
     borderColor: Colors.cardBorder,
     marginBottom: 20,
   },
+  groupImageWrap: {
+    position: 'relative',
+    marginBottom: 12,
+  },
+  groupImageBig: {
+    width: 64,
+    height: 64,
+    borderRadius: 18,
+  },
   groupIconBig: {
-    width: 56,
-    height: 56,
-    borderRadius: 16,
+    width: 64,
+    height: 64,
+    borderRadius: 18,
     backgroundColor: Colors.primarySoft,
     alignItems: 'center',
     justifyContent: 'center',
-    marginBottom: 12,
+  },
+  cameraOverlay: {
+    position: 'absolute',
+    bottom: -2,
+    right: -2,
+    width: 24,
+    height: 24,
+    borderRadius: 12,
+    backgroundColor: Colors.primary,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 2,
+    borderColor: Colors.card,
   },
   groupName: {
     fontSize: 22,
@@ -318,36 +464,61 @@ const styles = StyleSheet.create({
     color: Colors.textSecondary,
     marginTop: 2,
   },
+  inviteToggle: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    marginTop: 14,
+    paddingVertical: 8,
+    paddingHorizontal: 12,
+    borderRadius: 8,
+    backgroundColor: Colors.backgroundSecondary,
+  },
+  inviteToggleText: {
+    fontSize: 13,
+    fontFamily: 'Inter_500Medium',
+    color: Colors.textSecondary,
+  },
+  inviteContent: {
+    width: '100%',
+    marginTop: 12,
+  },
   inviteRow: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 10,
-    marginTop: 16,
     width: '100%',
   },
   inviteCodeBox: {
     flex: 1,
     backgroundColor: Colors.background,
     borderRadius: 10,
-    padding: 12,
+    padding: 10,
   },
   inviteLabel: {
-    fontSize: 11,
+    fontSize: 10,
     fontFamily: 'Inter_500Medium',
     color: Colors.textTertiary,
     textTransform: 'uppercase',
     letterSpacing: 0.5,
   },
   inviteCode: {
-    fontSize: 20,
+    fontSize: 17,
     fontFamily: 'Inter_700Bold',
     color: Colors.primary,
     letterSpacing: 2,
-    marginTop: 2,
+    marginTop: 1,
+  },
+  inviteHint: {
+    fontSize: 11,
+    fontFamily: 'Inter_400Regular',
+    color: Colors.textTertiary,
+    marginTop: 8,
+    textAlign: 'center',
   },
   shareBtn: {
-    width: 44,
-    height: 44,
+    width: 40,
+    height: 40,
     borderRadius: 12,
     backgroundColor: Colors.primary,
     alignItems: 'center',
@@ -366,6 +537,24 @@ const styles = StyleSheet.create({
     color: Colors.text,
     marginBottom: 10,
   },
+  organizerBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    backgroundColor: Colors.primarySoft,
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 6,
+    marginBottom: 10,
+  },
+  organizerText: {
+    fontSize: 11,
+    fontFamily: 'Inter_600SemiBold',
+    color: Colors.primary,
+  },
+  organizerSmallBadge: {
+    marginLeft: 4,
+  },
   birthdayRow: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -382,6 +571,12 @@ const styles = StyleSheet.create({
     borderRadius: 18,
     alignItems: 'center',
     justifyContent: 'center',
+    marginRight: 10,
+  },
+  miniAvatarImg: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
     marginRight: 10,
   },
   miniAvatarText: {
@@ -490,6 +685,10 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: Colors.cardBorder,
   },
+  memberNameRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
   memberName: {
     fontSize: 15,
     fontFamily: 'Inter_500Medium',
@@ -500,6 +699,9 @@ const styles = StyleSheet.create({
     fontFamily: 'Inter_400Regular',
     color: Colors.textSecondary,
     marginTop: 1,
+  },
+  removeBtn: {
+    padding: 4,
   },
   modalOverlay: {
     flex: 1,
@@ -515,6 +717,29 @@ const styles = StyleSheet.create({
     width: '100%',
     maxWidth: 360,
     maxHeight: 480,
+  },
+  confirmModal: {
+    backgroundColor: Colors.card,
+    borderRadius: 20,
+    padding: 24,
+    width: '100%',
+    maxWidth: 320,
+    alignItems: 'center',
+  },
+  confirmTitle: {
+    fontSize: 18,
+    fontFamily: 'Inter_700Bold',
+    color: Colors.text,
+    marginTop: 10,
+    marginBottom: 6,
+  },
+  confirmText: {
+    fontSize: 14,
+    fontFamily: 'Inter_400Regular',
+    color: Colors.textSecondary,
+    textAlign: 'center',
+    lineHeight: 20,
+    marginBottom: 16,
   },
   modalTitle: {
     fontSize: 20,
@@ -550,6 +775,12 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     marginRight: 10,
   },
+  personAvatarImg: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    marginRight: 10,
+  },
   personAvatarText: {
     fontSize: 12,
     fontFamily: 'Inter_600SemiBold',
@@ -583,6 +814,13 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     borderRadius: 12,
     backgroundColor: Colors.primary,
+  },
+  modalSubmitDanger: {
+    flex: 1,
+    paddingVertical: 14,
+    alignItems: 'center',
+    borderRadius: 12,
+    backgroundColor: Colors.danger,
   },
   modalSubmitText: {
     fontSize: 15,

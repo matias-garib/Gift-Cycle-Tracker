@@ -6,6 +6,7 @@ export interface User {
   paymentMethod: string;
   paymentHandle: string;
   avatarColor: string;
+  profileImage?: string;
 }
 
 export interface Group {
@@ -13,6 +14,8 @@ export interface Group {
   name: string;
   inviteCode: string;
   members: User[];
+  organizerId: string;
+  groupImage?: string;
   createdAt: string;
 }
 
@@ -50,9 +53,7 @@ export interface PaymentStat {
   userId: string;
   userName: string;
   avatarColor: string;
-  avgPayTime: number;
-  totalPaid: number;
-  totalOwed: number;
-  onTimeCount: number;
-  lateCount: number;
+  profileImage?: string;
+  avgPayTimeHours: number;
+  payCount: number;
 }

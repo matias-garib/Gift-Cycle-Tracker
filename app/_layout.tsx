@@ -18,6 +18,7 @@ function RootLayoutNav() {
       <Stack.Screen name="auth" options={{ headerShown: false, presentation: "modal" }} />
       <Stack.Screen name="group/[id]" options={{ headerShown: false }} />
       <Stack.Screen name="gift/[id]" options={{ headerShown: false }} />
+      <Stack.Screen name="join/[code]" options={{ headerShown: false }} />
     </Stack>
   );
 }

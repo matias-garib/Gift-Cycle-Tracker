@@ -1,16 +1,16 @@
 import React, { useState, useEffect } from 'react';
 import {
   View, Text, ScrollView, Pressable, StyleSheet, Platform,
-  TextInput,
+  TextInput, Image,
 } from 'react-native';
 import { router } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import * as Haptics from 'expo-haptics';
+import * as ImagePicker from 'expo-image-picker';
 import Colors from '@/constants/colors';
 import { useApp } from '@/lib/AppContext';
-import { getInitials } from '@/lib/helpers';
-import { formatBirthdayDisplay } from '@/lib/helpers';
+import { getInitials, formatBirthdayDisplay } from '@/lib/helpers';
 
 export default function ProfileScreen() {
   const insets = useSafeAreaInsets();
@@ -102,9 +102,29 @@ export default function ProfileScreen() {
         </View>
 
         <View style={styles.profileCard}>
-          <View style={[styles.bigAvatar, { backgroundColor: user.avatarColor }]}>
-            <Text style={styles.bigAvatarText}>{getInitials(user.name)}</Text>
-          </View>
+          <Pressable onPress={async () => {
+            const result = await ImagePicker.launchImageLibraryAsync({
+              mediaTypes: ['images'],
+              allowsEditing: true,
+              aspect: [1, 1],
+              quality: 0.7,
+            });
+            if (!result.canceled && result.assets[0]) {
+              await updateProfile({ profileImage: result.assets[0].uri });
+              Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+            }
+          }} style={styles.avatarWrap}>
+            {user.profileImage ? (
+              <Image source={{ uri: user.profileImage }} style={styles.bigAvatarImg} />
+            ) : (
+              <View style={[styles.bigAvatar, { backgroundColor: user.avatarColor }]}>
+                <Text style={styles.bigAvatarText}>{getInitials(user.name)}</Text>
+              </View>
+            )}
+            <View style={styles.avatarCameraBtn}>
+              <Ionicons name="camera" size={14} color={Colors.white} />
+            </View>
+          </Pressable>
           {editing ? (
             <TextInput
               style={styles.nameInput}
@@ -279,13 +299,34 @@ const styles = StyleSheet.create({
     borderColor: Colors.cardBorder,
     marginBottom: 24,
   },
+  avatarWrap: {
+    position: 'relative',
+    marginBottom: 12,
+  },
+  bigAvatarImg: {
+    width: 72,
+    height: 72,
+    borderRadius: 36,
+  },
+  avatarCameraBtn: {
+    position: 'absolute',
+    bottom: 0,
+    right: -2,
+    width: 26,
+    height: 26,
+    borderRadius: 13,
+    backgroundColor: Colors.primary,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 2,
+    borderColor: Colors.card,
+  },
   bigAvatar: {
     width: 72,
     height: 72,
     borderRadius: 36,
     alignItems: 'center',
     justifyContent: 'center',
-    marginBottom: 12,
   },
   bigAvatarText: {
     fontSize: 26,

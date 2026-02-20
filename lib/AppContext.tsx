@@ -11,9 +11,11 @@ interface AppContextValue {
   login: (email: string, name: string) => Promise<void>;
   logout: () => Promise<void>;
   updateProfile: (updates: Partial<User>) => Promise<void>;
-  createGroup: (name: string) => Promise<Group>;
+  createGroup: (name: string, groupImage?: string) => Promise<Group>;
+  updateGroupImage: (groupId: string, imageUri: string) => Promise<void>;
   joinGroup: (inviteCode: string) => Promise<Group | null>;
   addMemberToGroup: (groupId: string, member: User) => Promise<void>;
+  removeMemberFromGroup: (groupId: string, memberId: string) => Promise<void>;
   createGift: (groupId: string, birthdayPersonId: string) => Promise<Gift>;
   addWishlistItem: (giftId: string, item: Omit<WishlistItem, 'id'>) => Promise<void>;
   removeWishlistItem: (giftId: string, itemId: string) => Promise<void>;
@@ -99,26 +101,23 @@ export function AppProvider({ children }: { children: ReactNode }) {
     await Storage.saveUser(updated);
     setUser(updated);
     setAllUsers((prev) => prev.map((u) => (u.id === updated.id ? updated : u)));
-    setGroups((prev) =>
-      prev.map((g) => ({
-        ...g,
-        members: g.members.map((m) => (m.id === updated.id ? updated : m)),
-      }))
-    );
     const updatedGroups = groups.map((g) => ({
       ...g,
       members: g.members.map((m) => (m.id === updated.id ? updated : m)),
     }));
+    setGroups(updatedGroups);
     await Storage.saveGroups(updatedGroups);
   }, [user, groups]);
 
-  const createGroup = useCallback(async (name: string) => {
+  const createGroup = useCallback(async (name: string, groupImage?: string) => {
     if (!user) throw new Error('Not logged in');
     const group: Group = {
       id: generateId(),
       name,
       inviteCode: generateInviteCode(),
       members: [user],
+      organizerId: user.id,
+      groupImage,
       createdAt: new Date().toISOString(),
     };
     const updated = [...groups, group];
@@ -127,22 +126,41 @@ export function AppProvider({ children }: { children: ReactNode }) {
     return group;
   }, [user, groups]);
 
+  const updateGroupImage = useCallback(async (groupId: string, imageUri: string) => {
+    const updated = groups.map((g) =>
+      g.id === groupId ? { ...g, groupImage: imageUri } : g
+    );
+    setGroups(updated);
+    await Storage.saveGroups(updated);
+  }, [groups]);
+
   const joinGroup = useCallback(async (inviteCode: string) => {
     if (!user) return null;
     const group = groups.find((g) => g.inviteCode.toUpperCase() === inviteCode.toUpperCase());
     if (!group) return null;
     if (group.members.some((m) => m.id === user.id)) return group;
-    group.members.push(user);
-    const updated = groups.map((g) => (g.id === group.id ? group : g));
+    const updatedGroup = { ...group, members: [...group.members, user] };
+    const updated = groups.map((g) => (g.id === group.id ? updatedGroup : g));
     setGroups(updated);
     await Storage.saveGroups(updated);
-    return group;
+    return updatedGroup;
   }, [user, groups]);
 
   const addMemberToGroup = useCallback(async (groupId: string, member: User) => {
     const updated = groups.map((g) => {
       if (g.id === groupId && !g.members.some((m) => m.id === member.id)) {
         return { ...g, members: [...g.members, member] };
+      }
+      return g;
+    });
+    setGroups(updated);
+    await Storage.saveGroups(updated);
+  }, [groups]);
+
+  const removeMemberFromGroup = useCallback(async (groupId: string, memberId: string) => {
+    const updated = groups.map((g) => {
+      if (g.id === groupId) {
+        return { ...g, members: g.members.filter((m) => m.id !== memberId) };
       }
       return g;
     });
@@ -260,6 +278,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
       name: 'College Friends',
       inviteCode: generateInviteCode(),
       members: [user, ...demoMembers],
+      organizerId: user.id,
       createdAt: new Date().toISOString(),
     };
 
@@ -293,6 +312,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
     const allMembers = [user, ...demoMembers];
     const otherMembers = allMembers.filter((m) => m.id !== pastMember.id);
     const splitAmount = 120 / otherMembers.length;
+    const purchasedAt = new Date(Date.now() - 172800000).toISOString();
     demoGifts.push({
       id: generateId(),
       groupId: group.id,
@@ -306,10 +326,12 @@ export function AppProvider({ children }: { children: ReactNode }) {
         userId: m.id,
         amount: Math.round(splitAmount * 100) / 100,
         paid: i < 12,
-        paidAt: i < 12 ? new Date(Date.now() - Math.random() * 172800000).toISOString() : undefined,
+        paidAt: i < 12
+          ? new Date(new Date(purchasedAt).getTime() + (i + 1) * 3600000 * (1 + Math.random() * 20)).toISOString()
+          : undefined,
       })),
       createdAt: new Date(Date.now() - 604800000).toISOString(),
-      purchasedAt: new Date(Date.now() - 172800000).toISOString(),
+      purchasedAt,
     });
 
     for (const m of demoMembers) {
@@ -328,12 +350,12 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const value = useMemo(() => ({
     user, groups, gifts, loading,
     login, logout, updateProfile,
-    createGroup, joinGroup, addMemberToGroup,
+    createGroup, updateGroupImage, joinGroup, addMemberToGroup, removeMemberFromGroup,
     createGift, addWishlistItem, removeWishlistItem,
     markPurchased, markPaid,
     getGroupById, getGiftById, getGiftsForGroup, getUserById,
     seedDemoData,
-  }), [user, groups, gifts, loading, login, logout, updateProfile, createGroup, joinGroup, addMemberToGroup, createGift, addWishlistItem, removeWishlistItem, markPurchased, markPaid, getGroupById, getGiftById, getGiftsForGroup, getUserById, seedDemoData]);
+  }), [user, groups, gifts, loading, login, logout, updateProfile, createGroup, updateGroupImage, joinGroup, addMemberToGroup, removeMemberFromGroup, createGift, addWishlistItem, removeWishlistItem, markPurchased, markPaid, getGroupById, getGiftById, getGiftsForGroup, getUserById, seedDemoData]);
 
   return <AppContext.Provider value={value}>{children}</AppContext.Provider>;
 }
