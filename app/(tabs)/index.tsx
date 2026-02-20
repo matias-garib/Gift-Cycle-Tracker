@@ -44,7 +44,21 @@ export default function HomeScreen() {
 
   const upcoming = getUpcomingBirthdays(uniqueMembers, 30);
 
-  const activeGifts = gifts.filter((g) => g.phase !== 'settlement' || g.payments.some((p) => !p.paid));
+  const activeGiftsRaw = gifts.filter((g) => g.phase !== 'settlement' || g.payments.some((p) => !p.paid));
+  const seenPersonIds = new Set<string>();
+  const activeGifts = activeGiftsRaw
+    .sort((a, b) => {
+      const personA = allMembers.find((m) => m.id === a.birthdayPersonId);
+      const personB = allMembers.find((m) => m.id === b.birthdayPersonId);
+      const daysA = personA?.birthday ? getDaysUntilBirthday(personA.birthday) : 999;
+      const daysB = personB?.birthday ? getDaysUntilBirthday(personB.birthday) : 999;
+      return daysA - daysB;
+    })
+    .filter((g) => {
+      if (seenPersonIds.has(g.birthdayPersonId)) return false;
+      seenPersonIds.add(g.birthdayPersonId);
+      return true;
+    });
   const myDebts = gifts.filter(
     (g) => g.phase === 'settlement' && g.payments.some((p) => p.userId === user.id && !p.paid)
   );

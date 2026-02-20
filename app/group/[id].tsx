@@ -32,12 +32,26 @@ export default function GroupDetailScreen() {
   }, [group]);
 
   const activeGifts = useMemo(() => {
-    return groupGifts.filter((g) => {
+    if (!group) return [];
+    const unsettled = groupGifts.filter((g) => {
       if (g.phase === 'ideation' || g.phase === 'payment') return true;
       if (g.phase === 'settlement' && g.payments.some((p) => !p.paid)) return true;
       return false;
     });
-  }, [groupGifts]);
+    const seen = new Set<string>();
+    const deduped = unsettled.filter((g) => {
+      if (seen.has(g.birthdayPersonId)) return false;
+      seen.add(g.birthdayPersonId);
+      return true;
+    });
+    return deduped.sort((a, b) => {
+      const personA = group.members.find((m) => m.id === a.birthdayPersonId);
+      const personB = group.members.find((m) => m.id === b.birthdayPersonId);
+      const daysA = personA?.birthday ? getDaysUntilBirthday(personA.birthday) : 999;
+      const daysB = personB?.birthday ? getDaysUntilBirthday(personB.birthday) : 999;
+      return daysA - daysB;
+    });
+  }, [groupGifts, group]);
 
   const activeMembers = useMemo(() => {
     if (!group || !user) return [];
