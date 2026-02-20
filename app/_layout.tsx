@@ -19,6 +19,7 @@ function RootLayoutNav() {
       <Stack.Screen name="group/[id]" options={{ headerShown: false }} />
       <Stack.Screen name="gift/[id]" options={{ headerShown: false }} />
       <Stack.Screen name="join/[code]" options={{ headerShown: false }} />
+      <Stack.Screen name="auth-callback" options={{ headerShown: false }} />
     </Stack>
   );
 }

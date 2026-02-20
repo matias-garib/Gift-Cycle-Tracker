@@ -141,7 +141,8 @@ function setupAuth(app: express.Application) {
         logout: "/auth/logout",
         callback: "/auth/callback",
       },
-      afterCallback: (_req: Request, _res: Response, session: any) => {
+      afterCallback: (_req: Request, res: Response, session: any) => {
+        res.redirect(`${baseURL}/auth-callback`);
         return session;
       },
     }),
@@ -232,6 +233,10 @@ function configureExpoAndLanding(app: express.Application) {
 
     if (req.path.startsWith("/auth/")) {
       return next();
+    }
+
+    if (req.path === "/auth-callback") {
+      return serveLandingPage({ req, res, landingPageTemplate, appName });
     }
 
     if (req.path !== "/" && req.path !== "/manifest") {
