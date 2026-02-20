@@ -1,22 +1,55 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   View, Text, TextInput, Pressable, StyleSheet, KeyboardAvoidingView,
-  Platform, ScrollView, ActivityIndicator,
+  Platform, ScrollView, ActivityIndicator, Linking,
 } from 'react-native';
 import { router } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import * as Haptics from 'expo-haptics';
+import * as WebBrowser from 'expo-web-browser';
 import Colors from '@/constants/colors';
 import { useApp } from '@/lib/AppContext';
+import { getApiUrl } from '@/lib/query-client';
 
 export default function AuthScreen() {
   const insets = useSafeAreaInsets();
-  const { login } = useApp();
+  const { login, loginWithOAuth } = useApp();
   const [name, setName] = useState('');
   const [email, setEmail] = useState('');
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState('');
+  const [authConfigured, setAuthConfigured] = useState(false);
+  const [checkingAuth, setCheckingAuth] = useState(true);
+
+  useEffect(() => {
+    checkAuthStatus();
+  }, []);
+
+  const checkAuthStatus = async () => {
+    try {
+      const baseUrl = getApiUrl();
+      const url = new URL('/api/auth/status', baseUrl);
+      const res = await fetch(url.toString(), { credentials: 'include' });
+      const data = await res.json();
+      setAuthConfigured(data.authConfigured);
+
+      if (data.authenticated && data.loginUrl) {
+        const meUrl = new URL('/api/auth/me', baseUrl);
+        const meRes = await fetch(meUrl.toString(), { credentials: 'include' });
+        const meData = await meRes.json();
+        if (meData.authenticated && meData.user) {
+          await loginWithOAuth(meData.user);
+          Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+          router.replace('/(tabs)');
+          return;
+        }
+      }
+    } catch {
+    } finally {
+      setCheckingAuth(false);
+    }
+  };
 
   const handleSubmit = async () => {
     if (!name.trim() || !email.trim()) {
@@ -40,10 +73,32 @@ export default function AuthScreen() {
     }
   };
 
-  const handleSocialLogin = (provider: string) => {
-    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-    setError(`${provider} sign-in coming soon. Please use email for now.`);
+  const handleOAuthLogin = async () => {
+    try {
+      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+      setError('');
+
+      const baseUrl = getApiUrl();
+      const loginUrl = `${baseUrl}auth/login`;
+
+      if (Platform.OS === 'web') {
+        window.location.href = loginUrl;
+      } else {
+        await WebBrowser.openBrowserAsync(loginUrl);
+        await checkAuthStatus();
+      }
+    } catch {
+      setError('Could not open login page. Please try again.');
+    }
   };
+
+  if (checkingAuth) {
+    return (
+      <View style={[styles.container, styles.center, { paddingTop: Platform.OS === 'web' ? 67 : insets.top }]}>
+        <ActivityIndicator size="large" color={Colors.primary} />
+      </View>
+    );
+  }
 
   return (
     <KeyboardAvoidingView
@@ -65,29 +120,65 @@ export default function AuthScreen() {
           Coordinate birthday gifts with your friends, without the WhatsApp chaos.
         </Text>
 
-        <View style={styles.socialButtons}>
-          <Pressable
-            style={({ pressed }) => [styles.socialBtn, pressed && { opacity: 0.85, transform: [{ scale: 0.98 }] }]}
-            onPress={() => handleSocialLogin('Google')}
-          >
-            <Ionicons name="logo-google" size={20} color="#DB4437" />
-            <Text style={styles.socialBtnText}>Continue with Google</Text>
-          </Pressable>
+        {authConfigured ? (
+          <>
+            <View style={styles.socialButtons}>
+              <Pressable
+                style={({ pressed }) => [styles.socialBtn, pressed && { opacity: 0.85, transform: [{ scale: 0.98 }] }]}
+                onPress={handleOAuthLogin}
+              >
+                <Ionicons name="logo-google" size={20} color="#DB4437" />
+                <Text style={styles.socialBtnText}>Continue with Google</Text>
+              </Pressable>
 
-          <Pressable
-            style={({ pressed }) => [styles.socialBtn, pressed && { opacity: 0.85, transform: [{ scale: 0.98 }] }]}
-            onPress={() => handleSocialLogin('Apple')}
-          >
-            <Ionicons name="logo-apple" size={20} color={Colors.text} />
-            <Text style={styles.socialBtnText}>Continue with Apple</Text>
-          </Pressable>
-        </View>
+              <Pressable
+                style={({ pressed }) => [styles.socialBtn, pressed && { opacity: 0.85, transform: [{ scale: 0.98 }] }]}
+                onPress={handleOAuthLogin}
+              >
+                <Ionicons name="logo-apple" size={20} color={Colors.text} />
+                <Text style={styles.socialBtnText}>Continue with Apple</Text>
+              </Pressable>
 
-        <View style={styles.dividerRow}>
-          <View style={styles.dividerLine} />
-          <Text style={styles.dividerText}>or create an account</Text>
-          <View style={styles.dividerLine} />
-        </View>
+              <Pressable
+                style={({ pressed }) => [styles.socialBtn, styles.replitBtn, pressed && { opacity: 0.85, transform: [{ scale: 0.98 }] }]}
+                onPress={handleOAuthLogin}
+              >
+                <Ionicons name="code-slash" size={20} color={Colors.white} />
+                <Text style={[styles.socialBtnText, { color: Colors.white }]}>Continue with Replit</Text>
+              </Pressable>
+            </View>
+
+            <View style={styles.dividerRow}>
+              <View style={styles.dividerLine} />
+              <Text style={styles.dividerText}>or use email</Text>
+              <View style={styles.dividerLine} />
+            </View>
+          </>
+        ) : (
+          <View style={styles.socialButtons}>
+            <Pressable
+              style={({ pressed }) => [styles.socialBtn, { opacity: pressed ? 0.85 : 0.5 }]}
+              disabled
+            >
+              <Ionicons name="logo-google" size={20} color="#DB4437" />
+              <Text style={styles.socialBtnText}>Continue with Google</Text>
+            </Pressable>
+
+            <Pressable
+              style={({ pressed }) => [styles.socialBtn, { opacity: pressed ? 0.85 : 0.5 }]}
+              disabled
+            >
+              <Ionicons name="logo-apple" size={20} color={Colors.text} />
+              <Text style={styles.socialBtnText}>Continue with Apple</Text>
+            </Pressable>
+
+            <View style={styles.dividerRow}>
+              <View style={styles.dividerLine} />
+              <Text style={styles.dividerText}>create an account</Text>
+              <View style={styles.dividerLine} />
+            </View>
+          </View>
+        )}
 
         <View style={styles.form}>
           <View style={styles.inputWrap}>
@@ -117,10 +208,8 @@ export default function AuthScreen() {
 
           {!!error && (
             <View style={styles.errorWrap}>
-              <Ionicons name="alert-circle" size={16} color={error.includes('coming soon') ? Colors.warning : Colors.danger} />
-              <Text style={[styles.errorText, error.includes('coming soon') && { color: Colors.warning }]}>
-                {error}
-              </Text>
+              <Ionicons name="alert-circle" size={16} color={Colors.danger} />
+              <Text style={styles.errorText}>{error}</Text>
             </View>
           )}
 
@@ -149,6 +238,10 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: Colors.background,
+  },
+  center: {
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   scroll: {
     flexGrow: 1,
@@ -197,6 +290,10 @@ const styles = StyleSheet.create({
     backgroundColor: Colors.card,
     borderWidth: 1,
     borderColor: Colors.cardBorder,
+  },
+  replitBtn: {
+    backgroundColor: '#F26207',
+    borderColor: '#F26207',
   },
   socialBtnText: {
     fontSize: 16,
