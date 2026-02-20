@@ -1,5 +1,6 @@
 import express from "express";
 import type { Request, Response, NextFunction } from "express";
+import { auth } from "express-openid-connect";
 import { registerRoutes } from "./routes";
 import * as fs from "fs";
 import * as path from "path";
@@ -22,14 +23,15 @@ function setupCors(app: express.Application) {
     }
 
     if (process.env.REPLIT_DOMAINS) {
-      process.env.REPLIT_DOMAINS.split(",").forEach((d) => {
+      process.env.REPLIT_DOMAINS.split(",").forEach((d: string) => {
         origins.add(`https://${d.trim()}`);
       });
     }
 
+    origins.add("http://localhost:8081");
+
     const origin = req.header("origin");
 
-    // Allow localhost origins for Expo web development (any port)
     const isLocalhost =
       origin?.startsWith("http://localhost:") ||
       origin?.startsWith("http://127.0.0.1:");
@@ -40,7 +42,7 @@ function setupCors(app: express.Application) {
         "Access-Control-Allow-Methods",
         "GET, POST, PUT, DELETE, OPTIONS",
       );
-      res.header("Access-Control-Allow-Headers", "Content-Type");
+      res.header("Access-Control-Allow-Headers", "Content-Type, Authorization");
       res.header("Access-Control-Allow-Credentials", "true");
     }
 
@@ -67,7 +69,7 @@ function setupBodyParsing(app: express.Application) {
 function setupRequestLogging(app: express.Application) {
   app.use((req, res, next) => {
     const start = Date.now();
-    const path = req.path;
+    const reqPath = req.path;
     let capturedJsonResponse: Record<string, unknown> | undefined = undefined;
 
     const originalResJson = res.json;
@@ -77,17 +79,17 @@ function setupRequestLogging(app: express.Application) {
     };
 
     res.on("finish", () => {
-      if (!path.startsWith("/api")) return;
+      if (!reqPath.startsWith("/api")) return;
 
       const duration = Date.now() - start;
 
-      let logLine = `${req.method} ${path} ${res.statusCode} in ${duration}ms`;
+      let logLine = `${req.method} ${reqPath} ${res.statusCode} in ${duration}ms`;
       if (capturedJsonResponse) {
         logLine += ` :: ${JSON.stringify(capturedJsonResponse)}`;
       }
 
       if (logLine.length > 80) {
-        logLine = logLine.slice(0, 79) + "…";
+        logLine = logLine.slice(0, 79) + "\u2026";
       }
 
       log(logLine);
@@ -95,6 +97,57 @@ function setupRequestLogging(app: express.Application) {
 
     next();
   });
+}
+
+function getBaseUrl(): string {
+  if (process.env.REPLIT_DEV_DOMAIN) {
+    return `https://${process.env.REPLIT_DEV_DOMAIN}`;
+  }
+  if (process.env.REPLIT_DOMAINS) {
+    const domain = process.env.REPLIT_DOMAINS.split(",")[0]?.trim();
+    if (domain) return `https://${domain}`;
+  }
+  return `http://localhost:5000`;
+}
+
+function setupAuth(app: express.Application) {
+  const clientID = process.env.REPLIT_AUTH_CLIENT_ID;
+  const clientSecret = process.env.REPLIT_AUTH_CLIENT_SECRET;
+  const secret = process.env.SESSION_SECRET;
+
+  if (!clientID || !clientSecret) {
+    log("Replit Auth not configured (missing REPLIT_AUTH_CLIENT_ID or REPLIT_AUTH_CLIENT_SECRET). Auth endpoints will return fallback responses.");
+    return;
+  }
+
+  const baseURL = getBaseUrl();
+  log(`Configuring Replit Auth with baseURL: ${baseURL}`);
+
+  app.use(
+    auth({
+      authRequired: false,
+      auth0Logout: true,
+      baseURL,
+      clientID,
+      clientSecret,
+      issuerBaseURL: "https://replit.com",
+      secret: secret || "giftcycle-session-secret-fallback",
+      authorizationParams: {
+        response_type: "code",
+        scope: "openid email profile",
+      },
+      routes: {
+        login: "/auth/login",
+        logout: "/auth/logout",
+        callback: "/auth/callback",
+      },
+      afterCallback: (_req: Request, _res: Response, session: any) => {
+        return session;
+      },
+    }),
+  );
+
+  log("Replit Auth configured successfully");
 }
 
 function getAppName(): string {
@@ -177,6 +230,10 @@ function configureExpoAndLanding(app: express.Application) {
       return next();
     }
 
+    if (req.path.startsWith("/auth/")) {
+      return next();
+    }
+
     if (req.path !== "/" && req.path !== "/manifest") {
       return next();
     }
@@ -229,6 +286,7 @@ function setupErrorHandler(app: express.Application) {
   setupCors(app);
   setupBodyParsing(app);
   setupRequestLogging(app);
+  setupAuth(app);
 
   configureExpoAndLanding(app);
 
