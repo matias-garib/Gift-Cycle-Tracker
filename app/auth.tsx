@@ -32,7 +32,7 @@ export default function AuthScreen() {
     try {
       await login(email.trim().toLowerCase(), name.trim());
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-      router.dismissAll();
+      router.replace('/(tabs)');
     } catch {
       setError('Something went wrong');
     } finally {

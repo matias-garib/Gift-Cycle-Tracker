@@ -16,7 +16,7 @@ export default function HomeScreen() {
 
   useEffect(() => {
     if (!loading && !user) {
-      router.replace('/auth');
+      router.push('/auth');
     }
   }, [loading, user]);
 
