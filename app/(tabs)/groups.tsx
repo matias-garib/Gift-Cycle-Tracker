@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import {
   View, Text, ScrollView, Pressable, StyleSheet, Platform,
-  TextInput, Modal, Alert, ActivityIndicator,
+  TextInput, Modal, Alert, ActivityIndicator, Image,
 } from 'react-native';
 import { router } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -119,9 +119,13 @@ export default function GroupsScreen() {
                   router.push(`/group/${group.id}`);
                 }}
               >
-                <View style={styles.groupIcon}>
-                  <Ionicons name="people" size={22} color={Colors.primary} />
-                </View>
+                {group.groupImage ? (
+                  <Image source={{ uri: group.groupImage }} style={styles.groupImg} />
+                ) : (
+                  <View style={styles.groupIcon}>
+                    <Ionicons name="people" size={22} color={Colors.primary} />
+                  </View>
+                )}
                 <View style={styles.groupInfo}>
                   <Text style={styles.groupName}>{group.name}</Text>
                   <Text style={styles.groupMembers}>
@@ -307,6 +311,11 @@ const styles = StyleSheet.create({
     borderColor: Colors.cardBorder,
   },
   cardPressed: { opacity: 0.8, transform: [{ scale: 0.98 }] },
+  groupImg: {
+    width: 44,
+    height: 44,
+    borderRadius: 12,
+  },
   groupIcon: {
     width: 44,
     height: 44,

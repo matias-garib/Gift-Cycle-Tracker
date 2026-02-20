@@ -1,6 +1,6 @@
 import React, { useEffect } from 'react';
 import {
-  View, Text, ScrollView, Pressable, StyleSheet, Platform, ActivityIndicator,
+  View, Text, ScrollView, Pressable, StyleSheet, Platform, ActivityIndicator, Image,
 } from 'react-native';
 import { router } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -70,9 +70,13 @@ export default function HomeScreen() {
                 : 'No upcoming birthdays'}
             </Text>
           </View>
-          <View style={[styles.avatar, { backgroundColor: user.avatarColor || Colors.primary }]}>
-            <Text style={styles.avatarText}>{getInitials(user.name)}</Text>
-          </View>
+          {user.profileImage ? (
+            <Image source={{ uri: user.profileImage }} style={styles.avatarImg} />
+          ) : (
+            <View style={[styles.avatar, { backgroundColor: user.avatarColor || Colors.primary }]}>
+              <Text style={styles.avatarText}>{getInitials(user.name)}</Text>
+            </View>
+          )}
         </View>
 
         {myDebts.length > 0 && (
@@ -121,9 +125,13 @@ export default function HomeScreen() {
                       if (memberGroup) router.push(`/group/${memberGroup.groupId}`);
                     }}
                   >
-                    <View style={[styles.bdayAvatar, { backgroundColor: member.avatarColor }]}>
-                      <Text style={styles.bdayAvatarText}>{getInitials(member.name)}</Text>
-                    </View>
+                    {member.profileImage ? (
+                      <Image source={{ uri: member.profileImage }} style={styles.bdayAvatarImg} />
+                    ) : (
+                      <View style={[styles.bdayAvatar, { backgroundColor: member.avatarColor }]}>
+                        <Text style={styles.bdayAvatarText}>{getInitials(member.name)}</Text>
+                      </View>
+                    )}
                     <View style={styles.bdayInfo}>
                       <Text style={styles.bdayName}>{member.name}</Text>
                       <Text style={styles.bdayDate}>{formatDate(member.birthday)}</Text>
@@ -240,6 +248,11 @@ const styles = StyleSheet.create({
     color: Colors.textSecondary,
     marginTop: 2,
   },
+  avatarImg: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+  },
   avatar: {
     width: 44,
     height: 44,
@@ -305,6 +318,12 @@ const styles = StyleSheet.create({
     borderColor: Colors.cardBorder,
   },
   cardPressed: { opacity: 0.8, transform: [{ scale: 0.98 }] },
+  bdayAvatarImg: {
+    width: 42,
+    height: 42,
+    borderRadius: 21,
+    marginRight: 12,
+  },
   bdayAvatar: {
     width: 40,
     height: 40,
