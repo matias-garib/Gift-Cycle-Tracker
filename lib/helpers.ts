@@ -33,13 +33,19 @@ export function getInitials(name: string): string {
     .slice(0, 2);
 }
 
+function parseDateLocal(dateStr: string): Date {
+  // Split YYYY-MM-DD manually to avoid UTC-midnight parsing shifting the day
+  const [year, month, day] = dateStr.split('-').map(Number);
+  return new Date(year, month - 1, day);
+}
+
 export function formatDate(dateStr: string): string {
-  const d = new Date(dateStr);
+  const d = parseDateLocal(dateStr);
   return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
 }
 
 export function formatFullDate(dateStr: string): string {
-  const d = new Date(dateStr);
+  const d = parseDateLocal(dateStr);
   return d.toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' });
 }
 
@@ -54,7 +60,7 @@ export function formatBirthdayDisplay(dateStr: string): string {
 export function getDaysUntilBirthday(birthdayStr: string): number {
   const today = new Date();
   today.setHours(0, 0, 0, 0);
-  const bday = new Date(birthdayStr);
+  const bday = parseDateLocal(birthdayStr);
   const nextBday = new Date(today.getFullYear(), bday.getMonth(), bday.getDate());
   if (nextBday < today) {
     nextBday.setFullYear(nextBday.getFullYear() + 1);
@@ -79,7 +85,7 @@ export function getUpcomingBirthdays(
 export function getAgeTurning(birthdayStr: string): number {
   const today = new Date();
   today.setHours(0, 0, 0, 0);
-  const bday = new Date(birthdayStr);
+  const bday = parseDateLocal(birthdayStr);
   const birthYear = bday.getFullYear();
   const nextBday = new Date(today.getFullYear(), bday.getMonth(), bday.getDate());
   if (nextBday < today) {
