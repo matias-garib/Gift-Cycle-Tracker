@@ -1,8 +1,6 @@
 import express from "express";
 import type { Request, Response, NextFunction } from "express";
 import { registerRoutes } from "./routes";
-import * as fs from "fs";
-import * as path from "path";
 
 const app = express();
 const log = console.log;
@@ -15,44 +13,30 @@ declare module "http" {
 
 function setupCors(app: express.Application) {
   app.use((req, res, next) => {
-    const origin = req.header("origin");
+    const origin = req.header("origin") || "";
 
-    // Allow: localhost (dev), Vercel frontend, or any ALLOWED_ORIGINS env var
-    const allowed = new Set<string>([
-      "http://localhost:8081",
-      "http://localhost:3000",
-      ...(process.env.ALLOWED_ORIGINS ? process.env.ALLOWED_ORIGINS.split(",").map(s => s.trim()) : []),
-    ]);
+    const allowed =
+      origin.includes("vercel.app") ||
+      origin.includes("localhost") ||
+      origin.includes("railway.app") ||
+      (process.env.FRONTEND_URL ? origin === process.env.FRONTEND_URL : false);
 
-    const isAllowed =
-      !origin ||
-      allowed.has(origin) ||
-      origin.startsWith("http://localhost:") ||
-      origin.startsWith("http://127.0.0.1:");
-
-    if (isAllowed) {
-      res.header("Access-Control-Allow-Origin", origin || "*");
+    if (allowed) {
+      res.header("Access-Control-Allow-Origin", origin);
       res.header("Access-Control-Allow-Methods", "GET, POST, PUT, PATCH, DELETE, OPTIONS");
       res.header("Access-Control-Allow-Headers", "Content-Type, Authorization");
       res.header("Access-Control-Allow-Credentials", "true");
     }
 
-    if (req.method === "OPTIONS") {
-      return res.sendStatus(200);
-    }
-
+    if (req.method === "OPTIONS") return res.sendStatus(200);
     next();
   });
 }
 
 function setupBodyParsing(app: express.Application) {
-  app.use(
-    express.json({
-      verify: (req, _res, buf) => {
-        req.rawBody = buf;
-      },
-    }),
-  );
+  app.use(express.json({
+    verify: (req, _res, buf) => { req.rawBody = buf; },
+  }));
   app.use(express.urlencoded({ extended: false }));
 }
 
@@ -60,7 +44,7 @@ function setupRequestLogging(app: express.Application) {
   app.use((req, res, next) => {
     const start = Date.now();
     const reqPath = req.path;
-    let capturedJsonResponse: Record<string, unknown> | undefined = undefined;
+    let capturedJsonResponse: Record<string, unknown> | undefined;
 
     const originalResJson = res.json;
     res.json = function (bodyJson, ...args) {
@@ -72,12 +56,8 @@ function setupRequestLogging(app: express.Application) {
       if (!reqPath.startsWith("/api")) return;
       const duration = Date.now() - start;
       let logLine = `${req.method} ${reqPath} ${res.statusCode} in ${duration}ms`;
-      if (capturedJsonResponse) {
-        logLine += ` :: ${JSON.stringify(capturedJsonResponse)}`;
-      }
-      if (logLine.length > 80) {
-        logLine = logLine.slice(0, 79) + "\u2026";
-      }
+      if (capturedJsonResponse) logLine += ` :: ${JSON.stringify(capturedJsonResponse)}`;
+      if (logLine.length > 80) logLine = logLine.slice(0, 79) + "…";
       log(logLine);
     });
 
@@ -107,6 +87,6 @@ function setupErrorHandler(app: express.Application) {
 
   const port = parseInt(process.env.PORT || "5000", 10);
   server.listen({ port, host: "0.0.0.0", reusePort: true }, () => {
-    log(`express server serving on port ${port}`);
+    log(`Server running on port ${port}`);
   });
 })();
