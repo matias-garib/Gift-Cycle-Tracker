@@ -3,7 +3,7 @@ import {
   View, Text, TextInput, Pressable, StyleSheet, KeyboardAvoidingView,
   Platform, ScrollView, ActivityIndicator,
 } from 'react-native';
-import { router } from 'expo-router';
+import { router, useLocalSearchParams } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import * as Haptics from 'expo-haptics';
@@ -46,6 +46,7 @@ type Lang = keyof typeof i18n;
 export default function AuthScreen() {
   const insets = useSafeAreaInsets();
   const { login, register } = useApp();
+  const { pendingCode } = useLocalSearchParams<{ pendingCode?: string }>();
   const [isLogin, setIsLogin] = useState(true);
   const [name, setName] = useState('');
   const [email, setEmail] = useState('');
@@ -80,7 +81,11 @@ export default function AuthScreen() {
         await register(name.trim(), email.trim().toLowerCase(), password);
       }
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-      router.replace('/(tabs)');
+      if (pendingCode) {
+        router.replace(`/join/${pendingCode}`);
+      } else {
+        router.replace('/(tabs)');
+      }
     } catch (e: any) {
       setError(e?.message || t.errorGeneric);
     } finally {

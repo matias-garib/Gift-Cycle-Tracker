@@ -58,10 +58,10 @@ export default function JoinScreen() {
             <Ionicons name="person-outline" size={36} color={Colors.primary} />
           </View>
           <Text style={styles.heading}>Sign in to join</Text>
-          <Text style={styles.message}>Create an account first, then this invite link will add you automatically.</Text>
+          <Text style={styles.message}>Log in or create an account and you'll be added to the group automatically.</Text>
           <Pressable
             style={({ pressed }) => [styles.btn, pressed && { opacity: 0.85 }]}
-            onPress={() => router.replace('/auth')}
+            onPress={() => router.replace(`/auth?pendingCode=${code}`)}
           >
             <Text style={styles.btnText}>Sign In / Create Account</Text>
           </Pressable>

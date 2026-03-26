@@ -77,7 +77,7 @@ export default function GroupDetailScreen() {
   const isOrganizer = group.organizerId === user.id;
 
   const handleShare = async () => {
-    const domain = process.env.EXPO_PUBLIC_DOMAIN || 'giftcycle.replit.app';
+    const domain = process.env.EXPO_PUBLIC_DOMAIN || 'gift-cycle-tracker.vercel.app';
     const inviteUrl = `https://${domain}/join/${group.inviteCode}`;
     try {
       await Share.share({
