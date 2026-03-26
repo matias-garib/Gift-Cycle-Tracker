@@ -16,20 +16,28 @@ const i18n = {
     subtitle: 'Coordinate birthday gifts with your friends, without the WhatsApp chaos.',
     namePlaceholder: 'Your Name',
     emailPlaceholder: 'Email Address',
+    passwordPlaceholder: 'Password',
     createAccount: 'Create Account',
+    loginButton: 'Log In',
+    switchToLogin: 'Already have an account? Log in',
+    switchToRegister: "Don't have an account? Sign up",
     errorAllFields: 'Please fill in all fields',
     errorValidEmail: 'Please enter a valid email',
     errorGeneric: 'Something went wrong',
   },
   es: {
     title: 'Bienvenido a GiftCycle',
-    subtitle: 'Coordina regalos de cumplea\u00f1os con tus amigos, sin el caos de WhatsApp.',
+    subtitle: 'Coordina regalos de cumpleaños con tus amigos, sin el caos de WhatsApp.',
     namePlaceholder: 'Tu Nombre',
-    emailPlaceholder: 'Correo Electr\u00f3nico',
+    emailPlaceholder: 'Correo Electrónico',
+    passwordPlaceholder: 'Contraseña',
     createAccount: 'Crear Cuenta',
+    loginButton: 'Iniciar Sesión',
+    switchToLogin: '¿Ya tienes cuenta? Inicia sesión',
+    switchToRegister: '¿No tienes cuenta? Regístrate',
     errorAllFields: 'Por favor, llena todos los campos',
-    errorValidEmail: 'Por favor, ingresa un correo v\u00e1lido',
-    errorGeneric: 'Algo sali\u00f3 mal',
+    errorValidEmail: 'Por favor, ingresa un correo válido',
+    errorGeneric: 'Algo salió mal',
   },
 } as const;
 
@@ -37,9 +45,11 @@ type Lang = keyof typeof i18n;
 
 export default function AuthScreen() {
   const insets = useSafeAreaInsets();
-  const { login } = useApp();
+  const { login, register } = useApp();
+  const [isLogin, setIsLogin] = useState(false);
   const [name, setName] = useState('');
   const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState('');
   const [lang, setLang] = useState<Lang>('en');
@@ -53,7 +63,7 @@ export default function AuthScreen() {
   };
 
   const handleSubmit = async () => {
-    if (!name.trim() || !email.trim()) {
+    if (!email.trim() || !password.trim() || (!isLogin && !name.trim())) {
       setError(t.errorAllFields);
       return;
     }
@@ -64,11 +74,15 @@ export default function AuthScreen() {
     setError('');
     setSubmitting(true);
     try {
-      await login(email.trim().toLowerCase(), name.trim());
+      if (isLogin) {
+        await login(email.trim().toLowerCase(), password);
+      } else {
+        await register(name.trim(), email.trim().toLowerCase(), password);
+      }
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
       router.replace('/(tabs)');
-    } catch {
-      setError(t.errorGeneric);
+    } catch (e: any) {
+      setError(e?.message || t.errorGeneric);
     } finally {
       setSubmitting(false);
     }
@@ -99,17 +113,19 @@ export default function AuthScreen() {
         <Text style={styles.subtitle}>{t.subtitle}</Text>
 
         <View style={styles.form}>
-          <View style={styles.inputWrap}>
-            <Ionicons name="person-outline" size={20} color={Colors.textTertiary} style={styles.inputIcon} />
-            <TextInput
-              style={styles.input}
-              placeholder={t.namePlaceholder}
-              placeholderTextColor={Colors.textTertiary}
-              value={name}
-              onChangeText={setName}
-              autoCapitalize="words"
-            />
-          </View>
+          {!isLogin && (
+            <View style={styles.inputWrap}>
+              <Ionicons name="person-outline" size={20} color={Colors.textTertiary} style={styles.inputIcon} />
+              <TextInput
+                style={styles.input}
+                placeholder={t.namePlaceholder}
+                placeholderTextColor={Colors.textTertiary}
+                value={name}
+                onChangeText={setName}
+                autoCapitalize="words"
+              />
+            </View>
+          )}
 
           <View style={styles.inputWrap}>
             <Ionicons name="mail-outline" size={20} color={Colors.textTertiary} style={styles.inputIcon} />
@@ -120,6 +136,19 @@ export default function AuthScreen() {
               value={email}
               onChangeText={setEmail}
               keyboardType="email-address"
+              autoCapitalize="none"
+            />
+          </View>
+
+          <View style={styles.inputWrap}>
+            <Ionicons name="lock-closed-outline" size={20} color={Colors.textTertiary} style={styles.inputIcon} />
+            <TextInput
+              style={styles.input}
+              placeholder={t.passwordPlaceholder}
+              placeholderTextColor={Colors.textTertiary}
+              value={password}
+              onChangeText={setPassword}
+              secureTextEntry
               autoCapitalize="none"
             />
           </View>
@@ -143,8 +172,12 @@ export default function AuthScreen() {
             {submitting ? (
               <ActivityIndicator color={Colors.white} />
             ) : (
-              <Text style={styles.buttonText}>{t.createAccount}</Text>
+              <Text style={styles.buttonText}>{isLogin ? t.loginButton : t.createAccount}</Text>
             )}
+          </Pressable>
+
+          <Pressable onPress={() => { setIsLogin((v) => !v); setError(''); }}>
+            <Text style={styles.switchText}>{isLogin ? t.switchToRegister : t.switchToLogin}</Text>
           </Pressable>
         </View>
       </ScrollView>
@@ -273,5 +306,12 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontFamily: 'Inter_600SemiBold',
     color: Colors.white,
+  },
+  switchText: {
+    fontSize: 14,
+    fontFamily: 'Inter_400Regular',
+    color: Colors.textSecondary,
+    textAlign: 'center',
+    marginTop: 4,
   },
 });
