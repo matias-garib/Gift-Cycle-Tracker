@@ -1,321 +1,295 @@
 import type { Express, Request, Response } from "express";
 import { createServer, type Server } from "node:http";
-import * as db from "./storage";
+import * as bcrypt from "bcrypt";
+import * as storage from "./storage";
 
-// ── helpers ────────────────────────────────────────────────────────────────
+// ── Simple in-memory session store ────────────────────────────────────────
+const sessions = new Map<string, string>(); // token → userId
+
+function generateToken() {
+  return Math.random().toString(36).slice(2) + Date.now().toString(36);
+}
 
 function generateInviteCode() {
-  return Math.random().toString(36).substring(2, 8).toUpperCase();
+  return Math.random().toString(36).slice(2, 8).toUpperCase();
 }
 
 function getAvatarColor(index: number) {
-  const colors = ["#F87171","#FB923C","#FBBF24","#34D399","#60A5FA","#A78BFA","#F472B6"];
+  const colors = ["#FF6B6B","#4ECDC4","#45B7D1","#96CEB4","#FFEAA7","#DDA0DD","#98D8C8","#F7DC6F","#BB8FCE","#85C1E9"];
   return colors[index % colors.length];
 }
 
-/** Build the rich Group shape the frontend expects */
-async function buildGroup(group: Awaited<ReturnType<typeof db.getGroupById>>) {
-  if (!group) return null;
-  const members = await db.getMembersOfGroup(group.id);
-  return { ...group, members };
+function requireAuth(req: Request, res: Response): string | null {
+  const auth = req.headers.authorization;
+  if (!auth?.startsWith("Bearer ")) {
+    res.status(401).json({ error: "Unauthorized" });
+    return null;
+  }
+  const token = auth.slice(7);
+  const userId = sessions.get(token);
+  if (!userId) {
+    res.status(401).json({ error: "Invalid or expired session" });
+    return null;
+  }
+  return userId;
 }
-
-/** Build the rich Gift shape the frontend expects */
-async function buildGift(gift: Awaited<ReturnType<typeof db.getGiftById>>) {
-  if (!gift) return null;
-  const [wishlist, payments] = await Promise.all([
-    db.getWishlistForGift(gift.id),
-    db.getPaymentsForGift(gift.id),
-  ]);
-  return { ...gift, wishlist, payments };
-}
-
-// ── route registration ─────────────────────────────────────────────────────
 
 export async function registerRoutes(app: Express): Promise<Server> {
 
   // ── Auth ──────────────────────────────────────────────────────────────────
 
-  /** POST /api/auth/register */
+  // POST /api/auth/register
   app.post("/api/auth/register", async (req: Request, res: Response) => {
     try {
       const { name, email, password } = req.body;
       if (!name || !email || !password)
-        return res.status(400).json({ error: "name, email and password are required" });
+        return res.status(400).json({ error: "name, email and password required" });
 
-      const existing = await db.getUserByEmail(email);
+      const existing = await storage.getUserByEmail(email);
       if (existing) return res.status(409).json({ error: "Email already registered" });
 
-      const allGroups = await db.getGroupsForUser(""); // just to get user count for color
-      const user = await db.createUser({
+      const hashed = await bcrypt.hash(password, 10);
+      const user = await storage.createUser({
         name,
         email,
-        password, // NOTE: hash this in production
-        avatarColor: getAvatarColor(Math.floor(Math.random() * 100)),
+        password: hashed,
+        avatarColor: getAvatarColor(Math.floor(Math.random() * 10)),
       });
-      return res.json(user);
+
+      const token = generateToken();
+      sessions.set(token, user.id);
+      const { password: _, ...safeUser } = user;
+      return res.json({ token, user: safeUser });
     } catch (e) {
       console.error(e);
       return res.status(500).json({ error: "Server error" });
     }
   });
 
-  /** POST /api/auth/login */
+  // POST /api/auth/login
   app.post("/api/auth/login", async (req: Request, res: Response) => {
     try {
       const { email, password } = req.body;
       if (!email || !password)
-        return res.status(400).json({ error: "email and password are required" });
+        return res.status(400).json({ error: "email and password required" });
 
-      const user = await db.getUserByEmail(email);
-      if (!user || user.password !== password)
-        return res.status(401).json({ error: "Invalid credentials" });
+      const user = await storage.getUserByEmail(email);
+      if (!user) return res.status(401).json({ error: "Invalid credentials" });
 
-      return res.json(user);
+      const valid = await bcrypt.compare(password, user.password);
+      if (!valid) return res.status(401).json({ error: "Invalid credentials" });
+
+      const token = generateToken();
+      sessions.set(token, user.id);
+      const { password: _, ...safeUser } = user;
+      return res.json({ token, user: safeUser });
     } catch (e) {
       console.error(e);
       return res.status(500).json({ error: "Server error" });
     }
+  });
+
+  // POST /api/auth/logout
+  app.post("/api/auth/logout", (req: Request, res: Response) => {
+    const auth = req.headers.authorization;
+    if (auth?.startsWith("Bearer ")) sessions.delete(auth.slice(7));
+    return res.json({ ok: true });
+  });
+
+  // ── Me ────────────────────────────────────────────────────────────────────
+
+  // GET /api/me
+  app.get("/api/me", async (req: Request, res: Response) => {
+    const userId = requireAuth(req, res);
+    if (!userId) return;
+    const user = await storage.getUserById(userId);
+    if (!user) return res.status(404).json({ error: "User not found" });
+    const wishlist = await storage.getProfileWishlist(userId);
+    const { password: _, ...safeUser } = user;
+    return res.json({ ...safeUser, wishlist });
+  });
+
+  // PATCH /api/me
+  app.patch("/api/me", async (req: Request, res: Response) => {
+    const userId = requireAuth(req, res);
+    if (!userId) return;
+    const updated = await storage.updateUser(userId, req.body);
+    const { password: _, ...safeUser } = updated;
+    return res.json(safeUser);
+  });
+
+  // POST /api/me/wishlist
+  app.post("/api/me/wishlist", async (req: Request, res: Response) => {
+    const userId = requireAuth(req, res);
+    if (!userId) return;
+    const { title, url } = req.body;
+    if (!title) return res.status(400).json({ error: "title required" });
+    const item = await storage.addProfileWishlistItem(userId, title, url);
+    return res.json(item);
+  });
+
+  // DELETE /api/me/wishlist/:itemId
+  app.delete("/api/me/wishlist/:itemId", async (req: Request, res: Response) => {
+    const userId = requireAuth(req, res);
+    if (!userId) return;
+    await storage.removeProfileWishlistItem(req.params.itemId, userId);
+    return res.json({ ok: true });
   });
 
   // ── Users ─────────────────────────────────────────────────────────────────
 
-  /** GET /api/users/:id */
+  // GET /api/users/:id
   app.get("/api/users/:id", async (req: Request, res: Response) => {
-    try {
-      const user = await db.getUserById(req.params.id);
-      if (!user) return res.status(404).json({ error: "User not found" });
-      return res.json(user);
-    } catch (e) {
-      console.error(e);
-      return res.status(500).json({ error: "Server error" });
-    }
-  });
-
-  /** PATCH /api/users/:id */
-  app.patch("/api/users/:id", async (req: Request, res: Response) => {
-    try {
-      const updated = await db.updateUser(req.params.id, req.body);
-      return res.json(updated);
-    } catch (e) {
-      console.error(e);
-      return res.status(500).json({ error: "Server error" });
-    }
+    const userId = requireAuth(req, res);
+    if (!userId) return;
+    const user = await storage.getUserById(req.params.id);
+    if (!user) return res.status(404).json({ error: "Not found" });
+    const wishlist = await storage.getProfileWishlist(req.params.id);
+    const { password: _, ...safeUser } = user;
+    return res.json({ ...safeUser, wishlist });
   });
 
   // ── Groups ────────────────────────────────────────────────────────────────
 
-  /** GET /api/groups?userId=xxx  — all groups the user belongs to */
+  // GET /api/groups
   app.get("/api/groups", async (req: Request, res: Response) => {
-    try {
-      const userId = req.query.userId as string;
-      if (!userId) return res.status(400).json({ error: "userId is required" });
-
-      const rawGroups = await db.getGroupsForUser(userId);
-      const rich = await Promise.all(rawGroups.map(buildGroup));
-      return res.json(rich);
-    } catch (e) {
-      console.error(e);
-      return res.status(500).json({ error: "Server error" });
-    }
+    const userId = requireAuth(req, res);
+    if (!userId) return;
+    const userGroups = await storage.getGroupsForUser(userId);
+    const result = await Promise.all(userGroups.map(async (g) => {
+      const members = await storage.getMembersOfGroup(g.id);
+      return { ...g, members: members.map(({ password: _, ...u }) => u) };
+    }));
+    return res.json(result);
   });
 
-  /** GET /api/groups/:id */
-  app.get("/api/groups/:id", async (req: Request, res: Response) => {
-    try {
-      const group = await buildGroup(await db.getGroupById(req.params.id));
-      if (!group) return res.status(404).json({ error: "Group not found" });
-      return res.json(group);
-    } catch (e) {
-      console.error(e);
-      return res.status(500).json({ error: "Server error" });
-    }
-  });
-
-  /** POST /api/groups */
+  // POST /api/groups
   app.post("/api/groups", async (req: Request, res: Response) => {
-    try {
-      const { name, organizerId, groupImage } = req.body;
-      if (!name || !organizerId)
-        return res.status(400).json({ error: "name and organizerId are required" });
-
-      const group = await db.createGroup({
-        name,
-        organizerId,
-        groupImage,
-        inviteCode: generateInviteCode(),
-      });
-      return res.json(await buildGroup(group));
-    } catch (e) {
-      console.error(e);
-      return res.status(500).json({ error: "Server error" });
-    }
+    const userId = requireAuth(req, res);
+    if (!userId) return;
+    const { name, groupImage } = req.body;
+    if (!name) return res.status(400).json({ error: "name required" });
+    const group = await storage.createGroup({ name, inviteCode: generateInviteCode(), organizerId: userId, groupImage });
+    await storage.addMemberToGroup(group.id, userId);
+    const members = await storage.getMembersOfGroup(group.id);
+    return res.json({ ...group, members: members.map(({ password: _, ...u }) => u) });
   });
 
-  /** POST /api/groups/join  — join via invite code */
+  // POST /api/groups/join
   app.post("/api/groups/join", async (req: Request, res: Response) => {
-    try {
-      const { inviteCode, userId } = req.body;
-      if (!inviteCode || !userId)
-        return res.status(400).json({ error: "inviteCode and userId are required" });
-
-      const group = await db.getGroupByInviteCode(inviteCode);
-      if (!group) return res.status(404).json({ error: "Invalid invite code" });
-
-      await db.addMemberToGroup(group.id, userId);
-      return res.json(await buildGroup(group));
-    } catch (e) {
-      console.error(e);
-      return res.status(500).json({ error: "Server error" });
-    }
+    const userId = requireAuth(req, res);
+    if (!userId) return;
+    const { inviteCode } = req.body;
+    if (!inviteCode) return res.status(400).json({ error: "inviteCode required" });
+    const group = await storage.getGroupByInviteCode(inviteCode);
+    if (!group) return res.status(404).json({ error: "Invalid invite code" });
+    await storage.addMemberToGroup(group.id, userId);
+    const members = await storage.getMembersOfGroup(group.id);
+    return res.json({ ...group, members: members.map(({ password: _, ...u }) => u) });
   });
 
-  /** PATCH /api/groups/:id/image */
-  app.patch("/api/groups/:id/image", async (req: Request, res: Response) => {
-    try {
-      const { imageUri } = req.body;
-      await db.updateGroupImage(req.params.id, imageUri);
-      return res.json({ ok: true });
-    } catch (e) {
-      console.error(e);
-      return res.status(500).json({ error: "Server error" });
-    }
+  // PATCH /api/groups/:id
+  app.patch("/api/groups/:id", async (req: Request, res: Response) => {
+    const userId = requireAuth(req, res);
+    if (!userId) return;
+    const { groupImage } = req.body;
+    const updated = await storage.updateGroup(req.params.id, { groupImage });
+    return res.json(updated);
   });
 
-  /** DELETE /api/groups/:id/members/:userId */
-  app.delete("/api/groups/:id/members/:userId", async (req: Request, res: Response) => {
-    try {
-      await db.removeMemberFromGroup(req.params.id, req.params.userId);
-      return res.json({ ok: true });
-    } catch (e) {
-      console.error(e);
-      return res.status(500).json({ error: "Server error" });
-    }
+  // DELETE /api/groups/:id/members/:memberId
+  app.delete("/api/groups/:id/members/:memberId", async (req: Request, res: Response) => {
+    const userId = requireAuth(req, res);
+    if (!userId) return;
+    await storage.removeMemberFromGroup(req.params.id, req.params.memberId);
+    return res.json({ ok: true });
   });
 
   // ── Gifts ─────────────────────────────────────────────────────────────────
 
-  /** GET /api/gifts?groupId=xxx */
-  app.get("/api/gifts", async (req: Request, res: Response) => {
-    try {
-      const groupId = req.query.groupId as string;
-      if (!groupId) return res.status(400).json({ error: "groupId is required" });
-
-      const rawGifts = await db.getGiftsForGroup(groupId);
-      const rich = await Promise.all(rawGifts.map(buildGift));
-      return res.json(rich);
-    } catch (e) {
-      console.error(e);
-      return res.status(500).json({ error: "Server error" });
-    }
+  // GET /api/groups/:groupId/gifts
+  app.get("/api/groups/:groupId/gifts", async (req: Request, res: Response) => {
+    const userId = requireAuth(req, res);
+    if (!userId) return;
+    const groupGifts = await storage.getGiftsForGroup(req.params.groupId);
+    const result = await Promise.all(groupGifts.map(async (g) => {
+      const wishlist = await storage.getWishlistForGift(g.id);
+      const payments = await storage.getPaymentsForGift(g.id);
+      return { ...g, wishlist, payments };
+    }));
+    return res.json(result);
   });
 
-  /** GET /api/gifts/:id */
-  app.get("/api/gifts/:id", async (req: Request, res: Response) => {
-    try {
-      const gift = await buildGift(await db.getGiftById(req.params.id));
-      if (!gift) return res.status(404).json({ error: "Gift not found" });
-      return res.json(gift);
-    } catch (e) {
-      console.error(e);
-      return res.status(500).json({ error: "Server error" });
-    }
+  // POST /api/groups/:groupId/gifts
+  app.post("/api/groups/:groupId/gifts", async (req: Request, res: Response) => {
+    const userId = requireAuth(req, res);
+    if (!userId) return;
+    const { birthdayPersonId } = req.body;
+    if (!birthdayPersonId) return res.status(400).json({ error: "birthdayPersonId required" });
+    const gift = await storage.createGift({ groupId: req.params.groupId, birthdayPersonId });
+    return res.json({ ...gift, wishlist: [], payments: [] });
   });
 
-  /** POST /api/gifts */
-  app.post("/api/gifts", async (req: Request, res: Response) => {
-    try {
-      const { groupId, birthdayPersonId } = req.body;
-      if (!groupId || !birthdayPersonId)
-        return res.status(400).json({ error: "groupId and birthdayPersonId are required" });
-
-      const gift = await db.createGift({ groupId, birthdayPersonId });
-      return res.json(await buildGift(gift));
-    } catch (e) {
-      console.error(e);
-      return res.status(500).json({ error: "Server error" });
-    }
+  // POST /api/gifts/:giftId/wishlist
+  app.post("/api/gifts/:giftId/wishlist", async (req: Request, res: Response) => {
+    const userId = requireAuth(req, res);
+    if (!userId) return;
+    const { title, url } = req.body;
+    if (!title) return res.status(400).json({ error: "title required" });
+    const item = await storage.addWishlistItem(req.params.giftId, title, userId, url);
+    return res.json(item);
   });
 
-  /** POST /api/gifts/:id/purchase  — mark a gift as purchased & create payment splits */
-  app.post("/api/gifts/:id/purchase", async (req: Request, res: Response) => {
-    try {
-      const { purchasedItem, totalCost, buyerId, memberIds } = req.body;
-      if (!purchasedItem || totalCost == null || !buyerId || !memberIds?.length)
-        return res.status(400).json({ error: "purchasedItem, totalCost, buyerId, memberIds required" });
-
-      const splitAmount = Math.round((totalCost / memberIds.length) * 100) / 100;
-
-      // delete old payments if re-purchasing
-      const oldPayments = await db.getPaymentsForGift(req.params.id);
-
-      const paymentRows = (memberIds as string[]).map((uid: string) => ({
-        giftId: req.params.id,
-        userId: uid,
-        amount: splitAmount,
-        paid: uid === buyerId,
-        paidAt: uid === buyerId ? new Date().toISOString() : undefined,
-      }));
-
-      await db.createPayments(paymentRows);
-
-      const gift = await db.updateGift(req.params.id, {
-        phase: "settlement",
-        purchasedItem,
-        buyerId,
-        totalCost,
-        purchasedAt: new Date().toISOString(),
-      });
-
-      return res.json(await buildGift(gift!));
-    } catch (e) {
-      console.error(e);
-      return res.status(500).json({ error: "Server error" });
-    }
+  // DELETE /api/gifts/:giftId/wishlist/:itemId
+  app.delete("/api/gifts/:giftId/wishlist/:itemId", async (req: Request, res: Response) => {
+    const userId = requireAuth(req, res);
+    if (!userId) return;
+    await storage.removeWishlistItem(req.params.itemId, req.params.giftId);
+    return res.json({ ok: true });
   });
 
-  // ── Wishlist Items ────────────────────────────────────────────────────────
+  // POST /api/gifts/:giftId/purchase
+  app.post("/api/gifts/:giftId/purchase", async (req: Request, res: Response) => {
+    const userId = requireAuth(req, res);
+    if (!userId) return;
+    const { purchasedItem, totalCost } = req.body;
+    if (!purchasedItem || !totalCost) return res.status(400).json({ error: "purchasedItem and totalCost required" });
 
-  /** POST /api/gifts/:id/wishlist */
-  app.post("/api/gifts/:id/wishlist", async (req: Request, res: Response) => {
-    try {
-      const { title, url, addedBy } = req.body;
-      if (!title || !addedBy)
-        return res.status(400).json({ error: "title and addedBy are required" });
+    const gift = await storage.getGiftById(req.params.giftId);
+    if (!gift) return res.status(404).json({ error: "Gift not found" });
 
-      const item = await db.addWishlistItem({ giftId: req.params.id, title, url, addedBy });
-      return res.json(item);
-    } catch (e) {
-      console.error(e);
-      return res.status(500).json({ error: "Server error" });
-    }
+    const members = await storage.getMembersOfGroup(gift.groupId);
+    const payers = members.filter((m) => m.id !== gift.birthdayPersonId);
+    const splitAmount = Math.round((totalCost / payers.length) * 100) / 100;
+
+    await storage.updateGift(req.params.giftId, {
+      phase: "settlement",
+      purchasedItem,
+      buyerId: userId,
+      totalCost,
+      purchasedAt: new Date(),
+    });
+
+    const paymentEntries = payers.map((m) => ({
+      giftId: req.params.giftId,
+      userId: m.id,
+      amount: splitAmount,
+      paid: m.id === userId,
+    }));
+    await storage.createPayments(paymentEntries);
+
+    const updated = await storage.getGiftById(req.params.giftId);
+    const wishlist = await storage.getWishlistForGift(req.params.giftId);
+    const payments = await storage.getPaymentsForGift(req.params.giftId);
+    return res.json({ ...updated, wishlist, payments });
   });
 
-  /** DELETE /api/wishlist/:itemId */
-  app.delete("/api/wishlist/:itemId", async (req: Request, res: Response) => {
-    try {
-      await db.removeWishlistItem(req.params.itemId);
-      return res.json({ ok: true });
-    } catch (e) {
-      console.error(e);
-      return res.status(500).json({ error: "Server error" });
-    }
-  });
-
-  // ── Payments ──────────────────────────────────────────────────────────────
-
-  /** POST /api/gifts/:id/pay  — mark a user as paid */
-  app.post("/api/gifts/:id/pay", async (req: Request, res: Response) => {
-    try {
-      const { userId } = req.body;
-      if (!userId) return res.status(400).json({ error: "userId is required" });
-
-      const payment = await db.markPaymentPaid(req.params.id, userId);
-      return res.json(payment);
-    } catch (e) {
-      console.error(e);
-      return res.status(500).json({ error: "Server error" });
-    }
+  // POST /api/gifts/:giftId/pay
+  app.post("/api/gifts/:giftId/pay", async (req: Request, res: Response) => {
+    const userId = requireAuth(req, res);
+    if (!userId) return;
+    await storage.markPaymentPaid(req.params.giftId, userId);
+    return res.json({ ok: true });
   });
 
   const httpServer = createServer(app);
