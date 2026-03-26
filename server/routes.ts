@@ -34,11 +34,15 @@ function requireAuth(req: Request, res: Response): string | null {
   return userId;
 }
 
+function stripPassword<T extends { password?: string }>(user: T) {
+  const { password: _, ...safe } = user;
+  return safe;
+}
+
 export async function registerRoutes(app: Express): Promise<Server> {
 
   // ── Auth ──────────────────────────────────────────────────────────────────
 
-  // POST /api/auth/register
   app.post("/api/auth/register", async (req: Request, res: Response) => {
     try {
       const { name, email, password } = req.body;
@@ -58,15 +62,13 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
       const token = generateToken();
       sessions.set(token, user.id);
-      const { password: _, ...safeUser } = user;
-      return res.json({ token, user: safeUser });
+      return res.json({ token, user: stripPassword(user) });
     } catch (e) {
       console.error(e);
       return res.status(500).json({ error: "Server error" });
     }
   });
 
-  // POST /api/auth/login
   app.post("/api/auth/login", async (req: Request, res: Response) => {
     try {
       const { email, password } = req.body;
@@ -81,15 +83,13 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
       const token = generateToken();
       sessions.set(token, user.id);
-      const { password: _, ...safeUser } = user;
-      return res.json({ token, user: safeUser });
+      return res.json({ token, user: stripPassword(user) });
     } catch (e) {
       console.error(e);
       return res.status(500).json({ error: "Server error" });
     }
   });
 
-  // POST /api/auth/logout
   app.post("/api/auth/logout", (req: Request, res: Response) => {
     const auth = req.headers.authorization;
     if (auth?.startsWith("Bearer ")) sessions.delete(auth.slice(7));
@@ -98,84 +98,87 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   // ── Me ────────────────────────────────────────────────────────────────────
 
-  // GET /api/me
   app.get("/api/me", async (req: Request, res: Response) => {
     const userId = requireAuth(req, res);
     if (!userId) return;
     const user = await storage.getUserById(userId);
     if (!user) return res.status(404).json({ error: "User not found" });
-    const wishlist = await storage.getProfileWishlist(userId);
-    const { password: _, ...safeUser } = user;
-    return res.json({ ...safeUser, wishlist });
+    return res.json({ ...stripPassword(user), wishlist: [] });
   });
 
-  // PATCH /api/me
   app.patch("/api/me", async (req: Request, res: Response) => {
     const userId = requireAuth(req, res);
     if (!userId) return;
     const updated = await storage.updateUser(userId, req.body);
-    const { password: _, ...safeUser } = updated;
-    return res.json(safeUser);
+    return res.json(stripPassword(updated));
   });
 
-  // POST /api/me/wishlist
+  // Profile wishlist — stored as part of user wishlist field for now
   app.post("/api/me/wishlist", async (req: Request, res: Response) => {
     const userId = requireAuth(req, res);
     if (!userId) return;
     const { title, url } = req.body;
     if (!title) return res.status(400).json({ error: "title required" });
-    const item = await storage.addProfileWishlistItem(userId, title, url);
-    return res.json(item);
+    // Store in user's wishlist JSON field
+    const user = await storage.getUserById(userId);
+    if (!user) return res.status(404).json({ error: "User not found" });
+    const currentWishlist = (user as any).wishlist || [];
+    const newItem = { id: generateToken(), title, url };
+    await storage.updateUser(userId, { wishlist: [...currentWishlist, newItem] } as any);
+    return res.json(newItem);
   });
 
-  // DELETE /api/me/wishlist/:itemId
   app.delete("/api/me/wishlist/:itemId", async (req: Request, res: Response) => {
     const userId = requireAuth(req, res);
     if (!userId) return;
-    await storage.removeProfileWishlistItem(req.params.itemId, userId);
+    const user = await storage.getUserById(userId);
+    if (!user) return res.status(404).json({ error: "User not found" });
+    const currentWishlist = (user as any).wishlist || [];
+    await storage.updateUser(userId, {
+      wishlist: currentWishlist.filter((w: any) => w.id !== req.params.itemId)
+    } as any);
     return res.json({ ok: true });
   });
 
   // ── Users ─────────────────────────────────────────────────────────────────
 
-  // GET /api/users/:id
   app.get("/api/users/:id", async (req: Request, res: Response) => {
     const userId = requireAuth(req, res);
     if (!userId) return;
     const user = await storage.getUserById(req.params.id);
     if (!user) return res.status(404).json({ error: "Not found" });
-    const wishlist = await storage.getProfileWishlist(req.params.id);
-    const { password: _, ...safeUser } = user;
-    return res.json({ ...safeUser, wishlist });
+    return res.json({ ...stripPassword(user), wishlist: (user as any).wishlist || [] });
   });
 
   // ── Groups ────────────────────────────────────────────────────────────────
 
-  // GET /api/groups
   app.get("/api/groups", async (req: Request, res: Response) => {
     const userId = requireAuth(req, res);
     if (!userId) return;
     const userGroups = await storage.getGroupsForUser(userId);
     const result = await Promise.all(userGroups.map(async (g) => {
       const members = await storage.getMembersOfGroup(g.id);
-      return { ...g, members: members.map(({ password: _, ...u }) => u) };
+      return { ...g, members: members.map(stripPassword) };
     }));
     return res.json(result);
   });
 
-  // POST /api/groups
   app.post("/api/groups", async (req: Request, res: Response) => {
     const userId = requireAuth(req, res);
     if (!userId) return;
     const { name, groupImage } = req.body;
     if (!name) return res.status(400).json({ error: "name required" });
-    const group = await storage.createGroup({ name, inviteCode: generateInviteCode(), organizerId: userId, groupImage });
-    await storage.addMemberToGroup(group.id, userId);
+    const group = await storage.createGroup({
+      name,
+      inviteCode: generateInviteCode(),
+      organizerId: userId,
+      groupImage,
+    });
+    // createGroup already adds organizer as member
     const members = await storage.getMembersOfGroup(group.id);
-    return res.json({ ...group, members: members.map(({ password: _, ...u }) => u) });
+    return res.json({ ...group, members: members.map(stripPassword) });
   });
 
-  // POST /api/groups/join
   app.post("/api/groups/join", async (req: Request, res: Response) => {
     const userId = requireAuth(req, res);
     if (!userId) return;
@@ -185,19 +188,17 @@ export async function registerRoutes(app: Express): Promise<Server> {
     if (!group) return res.status(404).json({ error: "Invalid invite code" });
     await storage.addMemberToGroup(group.id, userId);
     const members = await storage.getMembersOfGroup(group.id);
-    return res.json({ ...group, members: members.map(({ password: _, ...u }) => u) });
+    return res.json({ ...group, members: members.map(stripPassword) });
   });
 
-  // PATCH /api/groups/:id
   app.patch("/api/groups/:id", async (req: Request, res: Response) => {
     const userId = requireAuth(req, res);
     if (!userId) return;
     const { groupImage } = req.body;
-    const updated = await storage.updateGroup(req.params.id, { groupImage });
+    const updated = await storage.updateGroupImage(req.params.id, groupImage);
     return res.json(updated);
   });
 
-  // DELETE /api/groups/:id/members/:memberId
   app.delete("/api/groups/:id/members/:memberId", async (req: Request, res: Response) => {
     const userId = requireAuth(req, res);
     if (!userId) return;
@@ -207,20 +208,20 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   // ── Gifts ─────────────────────────────────────────────────────────────────
 
-  // GET /api/groups/:groupId/gifts
   app.get("/api/groups/:groupId/gifts", async (req: Request, res: Response) => {
     const userId = requireAuth(req, res);
     if (!userId) return;
     const groupGifts = await storage.getGiftsForGroup(req.params.groupId);
     const result = await Promise.all(groupGifts.map(async (g) => {
-      const wishlist = await storage.getWishlistForGift(g.id);
-      const payments = await storage.getPaymentsForGift(g.id);
+      const [wishlist, payments] = await Promise.all([
+        storage.getWishlistForGift(g.id),
+        storage.getPaymentsForGift(g.id),
+      ]);
       return { ...g, wishlist, payments };
     }));
     return res.json(result);
   });
 
-  // POST /api/groups/:groupId/gifts
   app.post("/api/groups/:groupId/gifts", async (req: Request, res: Response) => {
     const userId = requireAuth(req, res);
     if (!userId) return;
@@ -230,25 +231,22 @@ export async function registerRoutes(app: Express): Promise<Server> {
     return res.json({ ...gift, wishlist: [], payments: [] });
   });
 
-  // POST /api/gifts/:giftId/wishlist
   app.post("/api/gifts/:giftId/wishlist", async (req: Request, res: Response) => {
     const userId = requireAuth(req, res);
     if (!userId) return;
     const { title, url } = req.body;
     if (!title) return res.status(400).json({ error: "title required" });
-    const item = await storage.addWishlistItem(req.params.giftId, title, userId, url);
+    const item = await storage.addWishlistItem({ giftId: req.params.giftId, title, url, addedBy: userId });
     return res.json(item);
   });
 
-  // DELETE /api/gifts/:giftId/wishlist/:itemId
   app.delete("/api/gifts/:giftId/wishlist/:itemId", async (req: Request, res: Response) => {
     const userId = requireAuth(req, res);
     if (!userId) return;
-    await storage.removeWishlistItem(req.params.itemId, req.params.giftId);
+    await storage.removeWishlistItem(req.params.itemId);
     return res.json({ ok: true });
   });
 
-  // POST /api/gifts/:giftId/purchase
   app.post("/api/gifts/:giftId/purchase", async (req: Request, res: Response) => {
     const userId = requireAuth(req, res);
     if (!userId) return;
@@ -267,7 +265,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       purchasedItem,
       buyerId: userId,
       totalCost,
-      purchasedAt: new Date(),
+      purchasedAt: new Date().toISOString(),
     });
 
     const paymentEntries = payers.map((m) => ({
@@ -279,12 +277,13 @@ export async function registerRoutes(app: Express): Promise<Server> {
     await storage.createPayments(paymentEntries);
 
     const updated = await storage.getGiftById(req.params.giftId);
-    const wishlist = await storage.getWishlistForGift(req.params.giftId);
-    const payments = await storage.getPaymentsForGift(req.params.giftId);
+    const [wishlist, payments] = await Promise.all([
+      storage.getWishlistForGift(req.params.giftId),
+      storage.getPaymentsForGift(req.params.giftId),
+    ]);
     return res.json({ ...updated, wishlist, payments });
   });
 
-  // POST /api/gifts/:giftId/pay
   app.post("/api/gifts/:giftId/pay", async (req: Request, res: Response) => {
     const userId = requireAuth(req, res);
     if (!userId) return;
