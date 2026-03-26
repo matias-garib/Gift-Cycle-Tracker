@@ -76,6 +76,13 @@ export const wishlistItems = pgTable("wishlist_items", {
 
 export type WishlistItem = typeof wishlistItems.$inferSelect;
 
+// ── Sessions ───────────────────────────────────────────────────────────────
+export const sessions = pgTable("sessions", {
+  token: text("token").primaryKey(),
+  userId: varchar("user_id").notNull().references(() => users.id),
+  createdAt: text("created_at").notNull().default(sql`now()::text`),
+});
+
 // ── Payments ───────────────────────────────────────────────────────────────
 export const payments = pgTable("payments", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),

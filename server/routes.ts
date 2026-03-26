@@ -3,9 +3,6 @@ import { createServer, type Server } from "node:http";
 import * as bcrypt from "bcrypt";
 import * as storage from "./storage";
 
-// ── Simple in-memory session store ────────────────────────────────────────
-const sessions = new Map<string, string>(); // token → userId
-
 function generateToken() {
   return Math.random().toString(36).slice(2) + Date.now().toString(36);
 }
@@ -19,19 +16,19 @@ function getAvatarColor(index: number) {
   return colors[index % colors.length];
 }
 
-function requireAuth(req: Request, res: Response): string | null {
+async function requireAuth(req: Request, res: Response): Promise<string | null> {
   const auth = req.headers.authorization;
   if (!auth?.startsWith("Bearer ")) {
     res.status(401).json({ error: "Unauthorized" });
     return null;
   }
   const token = auth.slice(7);
-  const userId = sessions.get(token);
-  if (!userId) {
+  const session = await storage.getSession(token);
+  if (!session) {
     res.status(401).json({ error: "Invalid or expired session" });
     return null;
   }
-  return userId;
+  return session.userId;
 }
 
 function stripPassword<T extends { password?: string }>(user: T) {
@@ -61,7 +58,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       });
 
       const token = generateToken();
-      sessions.set(token, user.id);
+      await storage.createSession(token, user.id);
       return res.json({ token, user: stripPassword(user) });
     } catch (e) {
       console.error(e);
@@ -82,7 +79,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       if (!valid) return res.status(401).json({ error: "Invalid credentials" });
 
       const token = generateToken();
-      sessions.set(token, user.id);
+      await storage.createSession(token, user.id);
       return res.json({ token, user: stripPassword(user) });
     } catch (e) {
       console.error(e);
@@ -90,16 +87,16 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.post("/api/auth/logout", (req: Request, res: Response) => {
+  app.post("/api/auth/logout", async (req: Request, res: Response) => {
     const auth = req.headers.authorization;
-    if (auth?.startsWith("Bearer ")) sessions.delete(auth.slice(7));
+    if (auth?.startsWith("Bearer ")) await storage.deleteSession(auth.slice(7));
     return res.json({ ok: true });
   });
 
   // ── Me ────────────────────────────────────────────────────────────────────
 
   app.get("/api/me", async (req: Request, res: Response) => {
-    const userId = requireAuth(req, res);
+    const userId = await requireAuth(req, res);
     if (!userId) return;
     const user = await storage.getUserById(userId);
     if (!user) return res.status(404).json({ error: "User not found" });
@@ -107,7 +104,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   app.patch("/api/me", async (req: Request, res: Response) => {
-    const userId = requireAuth(req, res);
+    const userId = await requireAuth(req, res);
     if (!userId) return;
     try {
       const updated = await storage.updateUser(userId, req.body);
@@ -121,7 +118,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   // Profile wishlist — stored as part of user wishlist field for now
   app.post("/api/me/wishlist", async (req: Request, res: Response) => {
-    const userId = requireAuth(req, res);
+    const userId = await requireAuth(req, res);
     if (!userId) return;
     const { title, url } = req.body;
     if (!title) return res.status(400).json({ error: "title required" });
@@ -135,7 +132,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   app.delete("/api/me/wishlist/:itemId", async (req: Request, res: Response) => {
-    const userId = requireAuth(req, res);
+    const userId = await requireAuth(req, res);
     if (!userId) return;
     const user = await storage.getUserById(userId);
     if (!user) return res.status(404).json({ error: "User not found" });
@@ -149,7 +146,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // ── Users ─────────────────────────────────────────────────────────────────
 
   app.get("/api/users/:id", async (req: Request, res: Response) => {
-    const userId = requireAuth(req, res);
+    const userId = await requireAuth(req, res);
     if (!userId) return;
     const user = await storage.getUserById(req.params.id);
     if (!user) return res.status(404).json({ error: "Not found" });
@@ -159,7 +156,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // ── Groups ────────────────────────────────────────────────────────────────
 
   app.get("/api/groups", async (req: Request, res: Response) => {
-    const userId = requireAuth(req, res);
+    const userId = await requireAuth(req, res);
     if (!userId) return;
     const userGroups = await storage.getGroupsForUser(userId);
     const result = await Promise.all(userGroups.map(async (g) => {
@@ -170,7 +167,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   app.post("/api/groups", async (req: Request, res: Response) => {
-    const userId = requireAuth(req, res);
+    const userId = await requireAuth(req, res);
     if (!userId) return;
     const { name, groupImage } = req.body;
     if (!name) return res.status(400).json({ error: "name required" });
@@ -186,7 +183,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   app.post("/api/groups/join", async (req: Request, res: Response) => {
-    const userId = requireAuth(req, res);
+    const userId = await requireAuth(req, res);
     if (!userId) return;
     const { inviteCode } = req.body;
     if (!inviteCode) return res.status(400).json({ error: "inviteCode required" });
@@ -198,7 +195,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   app.patch("/api/groups/:id", async (req: Request, res: Response) => {
-    const userId = requireAuth(req, res);
+    const userId = await requireAuth(req, res);
     if (!userId) return;
     const { groupImage } = req.body;
     const updated = await storage.updateGroupImage(req.params.id, groupImage);
@@ -206,7 +203,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   app.delete("/api/groups/:id/members/:memberId", async (req: Request, res: Response) => {
-    const userId = requireAuth(req, res);
+    const userId = await requireAuth(req, res);
     if (!userId) return;
     await storage.removeMemberFromGroup(req.params.id, req.params.memberId);
     return res.json({ ok: true });
@@ -215,7 +212,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // ── Gifts ─────────────────────────────────────────────────────────────────
 
   app.get("/api/groups/:groupId/gifts", async (req: Request, res: Response) => {
-    const userId = requireAuth(req, res);
+    const userId = await requireAuth(req, res);
     if (!userId) return;
     const groupGifts = await storage.getGiftsForGroup(req.params.groupId);
     const result = await Promise.all(groupGifts.map(async (g) => {
@@ -229,7 +226,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   app.post("/api/groups/:groupId/gifts", async (req: Request, res: Response) => {
-    const userId = requireAuth(req, res);
+    const userId = await requireAuth(req, res);
     if (!userId) return;
     const { birthdayPersonId } = req.body;
     if (!birthdayPersonId) return res.status(400).json({ error: "birthdayPersonId required" });
@@ -238,7 +235,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   app.post("/api/gifts/:giftId/wishlist", async (req: Request, res: Response) => {
-    const userId = requireAuth(req, res);
+    const userId = await requireAuth(req, res);
     if (!userId) return;
     const { title, url } = req.body;
     if (!title) return res.status(400).json({ error: "title required" });
@@ -247,14 +244,14 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   app.delete("/api/gifts/:giftId/wishlist/:itemId", async (req: Request, res: Response) => {
-    const userId = requireAuth(req, res);
+    const userId = await requireAuth(req, res);
     if (!userId) return;
     await storage.removeWishlistItem(req.params.itemId);
     return res.json({ ok: true });
   });
 
   app.post("/api/gifts/:giftId/purchase", async (req: Request, res: Response) => {
-    const userId = requireAuth(req, res);
+    const userId = await requireAuth(req, res);
     if (!userId) return;
     const { purchasedItem, totalCost } = req.body;
     if (!purchasedItem || !totalCost) return res.status(400).json({ error: "purchasedItem and totalCost required" });
@@ -292,7 +289,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   app.post("/api/gifts/:giftId/pay", async (req: Request, res: Response) => {
-    const userId = requireAuth(req, res);
+    const userId = await requireAuth(req, res);
     if (!userId) return;
     await storage.markPaymentPaid(req.params.giftId, userId);
     return res.json({ ok: true });

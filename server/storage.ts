@@ -12,6 +12,21 @@ const pool = new Pool({
 
 export const db = drizzle(pool, { schema });
 
+// ── Sessions ───────────────────────────────────────────────────────────────
+
+export async function createSession(token: string, userId: string) {
+  await db.insert(schema.sessions).values({ token, userId });
+}
+
+export async function getSession(token: string) {
+  const rows = await db.select().from(schema.sessions).where(eq(schema.sessions.token, token));
+  return rows[0] ?? null;
+}
+
+export async function deleteSession(token: string) {
+  await db.delete(schema.sessions).where(eq(schema.sessions.token, token));
+}
+
 // ── Users ──────────────────────────────────────────────────────────────────
 
 export async function getUserById(id: string) {

@@ -46,7 +46,7 @@ type Lang = keyof typeof i18n;
 export default function AuthScreen() {
   const insets = useSafeAreaInsets();
   const { login, register } = useApp();
-  const [isLogin, setIsLogin] = useState(false);
+  const [isLogin, setIsLogin] = useState(true);
   const [name, setName] = useState('');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
