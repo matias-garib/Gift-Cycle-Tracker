@@ -103,14 +103,20 @@ export async function registerRoutes(app: Express): Promise<Server> {
     if (!userId) return;
     const user = await storage.getUserById(userId);
     if (!user) return res.status(404).json({ error: "User not found" });
-    return res.json({ ...stripPassword(user), wishlist: [] });
+    return res.json(stripPassword(user));
   });
 
   app.patch("/api/me", async (req: Request, res: Response) => {
     const userId = requireAuth(req, res);
     if (!userId) return;
-    const updated = await storage.updateUser(userId, req.body);
-    return res.json(stripPassword(updated));
+    try {
+      const updated = await storage.updateUser(userId, req.body);
+      if (!updated) return res.status(404).json({ error: "User not found" });
+      return res.json(stripPassword(updated));
+    } catch (e) {
+      console.error(e);
+      return res.status(500).json({ error: "Server error" });
+    }
   });
 
   // Profile wishlist — stored as part of user wishlist field for now
@@ -258,6 +264,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
     const members = await storage.getMembersOfGroup(gift.groupId);
     const payers = members.filter((m) => m.id !== gift.birthdayPersonId);
+    if (payers.length === 0) return res.status(400).json({ error: "No members to split cost with" });
     const splitAmount = Math.round((totalCost / payers.length) * 100) / 100;
 
     await storage.updateGift(req.params.giftId, {
