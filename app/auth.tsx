@@ -86,7 +86,11 @@ export default function AuthScreen() {
       // (stored when the user previously visited /join/CODE before installing the PWA)
       const storedCode = await AsyncStorage.getItem('pending_join_code');
       const codeToJoin = pendingCode || storedCode;
-      if (codeToJoin) {
+      if (!isLogin) {
+        // New registration: show profile completion step before entering the app
+        const dest = codeToJoin ? `/complete-profile?pendingCode=${codeToJoin}` : '/complete-profile';
+        router.replace(dest as any);
+      } else if (codeToJoin) {
         router.replace(`/join/${codeToJoin}`);
       } else {
         router.replace('/(tabs)');

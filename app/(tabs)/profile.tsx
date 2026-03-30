@@ -22,6 +22,7 @@ export default function ProfileScreen() {
   const [birthdayDay, setBirthdayDay] = useState('');
   const [birthdayMonth, setBirthdayMonth] = useState('');
   const [birthdayYear, setBirthdayYear] = useState('');
+  const [paymentMethod, setPaymentMethod] = useState('');
   const [paymentInfo, setPaymentInfo] = useState('');
   const [showLogoutConfirm, setShowLogoutConfirm] = useState(false);
   const [shoeSize, setShoeSize] = useState('');
@@ -42,6 +43,7 @@ export default function ProfileScreen() {
           setBirthdayDay(parts[2]);
         }
       }
+      setPaymentMethod(user.paymentMethod || '');
       setPaymentInfo(user.paymentHandle || '');
       setShoeSize(user.shoeSize || '');
       setClothesSize(user.clothesSize || '');
@@ -72,7 +74,7 @@ export default function ProfileScreen() {
     await updateProfile({
       name: name.trim(),
       birthday,
-      paymentMethod: paymentInfo.trim() ? 'Bank Transfer' : '',
+      paymentMethod: paymentMethod,
       paymentHandle: paymentInfo.trim(),
       shoeSize: shoeSize.trim(),
       clothesSize,
@@ -234,24 +236,46 @@ export default function ProfileScreen() {
         <View style={styles.section}>
           <Text style={styles.sectionTitle}>Payment Details</Text>
           <Text style={styles.sectionHint}>
-            Enter your full payment/bank transfer details so others know where to send money
+            So others know where to send money for your gift
           </Text>
           {editing ? (
-            <TextInput
-              style={styles.paymentInput}
-              value={paymentInfo}
-              onChangeText={setPaymentInfo}
-              placeholder={"e.g., Venmo: @yourname\nor\nBank: Banco Estado\nAccount: 1234567890\nRUT: 12.345.678-9\nType: Cuenta Vista\nEmail: your@email.com"}
-              placeholderTextColor={Colors.textTertiary}
-              multiline
-              numberOfLines={6}
-              textAlignVertical="top"
-            />
+            <>
+              <Text style={styles.sizeFieldLabel}>Payment Method</Text>
+              <View style={[styles.chipsRow, { marginBottom: 12 }]}>
+                {['Venmo', 'Zelle', 'Bank Transfer'].map((m) => (
+                  <Pressable
+                    key={m}
+                    style={[styles.chip, paymentMethod === m && styles.chipSelected]}
+                    onPress={() => setPaymentMethod((prev) => prev === m ? '' : m)}
+                  >
+                    <Text style={[styles.chipText, paymentMethod === m && styles.chipTextSelected]}>{m}</Text>
+                  </Pressable>
+                ))}
+              </View>
+              <Text style={[styles.sizeFieldLabel, { marginBottom: 6 }]}>Handle / Account</Text>
+              <TextInput
+                style={styles.paymentInput}
+                value={paymentInfo}
+                onChangeText={setPaymentInfo}
+                placeholder={
+                  paymentMethod === 'Venmo' ? '@yourhandle'
+                  : paymentMethod === 'Zelle' ? 'Email or phone number'
+                  : paymentMethod === 'Bank Transfer' ? 'Bank name, account number, etc.'
+                  : 'Username, email, or account number'
+                }
+                placeholderTextColor={Colors.textTertiary}
+                multiline
+                numberOfLines={4}
+                textAlignVertical="top"
+              />
+            </>
           ) : (
             <View style={styles.fieldRow}>
               <Ionicons name="card-outline" size={18} color={Colors.accent} />
               <Text style={styles.fieldValue}>
-                {user.paymentHandle || 'Not set'}
+                {user.paymentHandle
+                  ? `${user.paymentMethod ? `${user.paymentMethod}: ` : ''}${user.paymentHandle}`
+                  : 'Not set'}
               </Text>
             </View>
           )}
