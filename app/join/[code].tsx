@@ -3,6 +3,7 @@ import { View, Text, ActivityIndicator, StyleSheet, Pressable, Platform } from '
 import { router, useLocalSearchParams } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import Colors from '@/constants/colors';
 import { useApp } from '@/lib/AppContext';
 
@@ -12,6 +13,15 @@ export default function JoinScreen() {
   const { user, joinGroup, loading } = useApp();
   const [status, setStatus] = useState<'loading' | 'success' | 'error' | 'login'>('loading');
   const [groupName, setGroupName] = useState('');
+
+  // Persist the code immediately so it survives a PWA install/reopen cycle.
+  // If the user installs the app from the invite link and later opens from
+  // the home screen icon (which goes to /), the code is still available.
+  useEffect(() => {
+    if (code) {
+      AsyncStorage.setItem('pending_join_code', String(code));
+    }
+  }, [code]);
 
   useEffect(() => {
     if (loading) return;

@@ -91,10 +91,15 @@ export default function GroupDetailScreen() {
       mediaTypes: ['images'],
       allowsEditing: true,
       aspect: [1, 1],
-      quality: 0.7,
+      quality: 0.3,
+      base64: true,
     });
     if (!result.canceled && result.assets[0]) {
-      await updateGroupImage(group.id, result.assets[0].uri);
+      const asset = result.assets[0];
+      const dataUri = asset.base64
+        ? `data:image/jpeg;base64,${asset.base64}`
+        : asset.uri;
+      await updateGroupImage(group.id, dataUri);
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
     }
   };
@@ -136,7 +141,7 @@ export default function GroupDetailScreen() {
       >
         <Pressable
           style={({ pressed }) => [styles.backBtn, pressed && { opacity: 0.6 }]}
-          onPress={() => router.back()}
+          onPress={() => router.canGoBack() ? router.back() : router.replace('/(tabs)')}
         >
           <Ionicons name="chevron-back" size={24} color={Colors.primary} />
         </Pressable>

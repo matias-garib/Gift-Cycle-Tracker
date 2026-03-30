@@ -139,10 +139,17 @@ export default function ProfileScreen() {
               mediaTypes: ['images'],
               allowsEditing: true,
               aspect: [1, 1],
-              quality: 0.7,
+              quality: 0.3,
+              base64: true,
             });
             if (!result.canceled && result.assets[0]) {
-              await updateProfile({ profileImage: result.assets[0].uri });
+              const asset = result.assets[0];
+              // Use base64 data URI so the image is stored in the DB and
+              // visible to other group members (local file:// URIs are device-only)
+              const dataUri = asset.base64
+                ? `data:image/jpeg;base64,${asset.base64}`
+                : asset.uri;
+              await updateProfile({ profileImage: dataUri });
               Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
             }
           }} style={styles.avatarWrap}>

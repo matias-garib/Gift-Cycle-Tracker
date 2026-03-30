@@ -7,6 +7,7 @@ import { router, useLocalSearchParams } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import * as Haptics from 'expo-haptics';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import Colors from '@/constants/colors';
 import { useApp } from '@/lib/AppContext';
 
@@ -81,8 +82,12 @@ export default function AuthScreen() {
         await register(name.trim(), email.trim().toLowerCase(), password);
       }
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-      if (pendingCode) {
-        router.replace(`/join/${pendingCode}`);
+      // pendingCode may come from the URL (?pendingCode=X) or from AsyncStorage
+      // (stored when the user previously visited /join/CODE before installing the PWA)
+      const storedCode = await AsyncStorage.getItem('pending_join_code');
+      const codeToJoin = pendingCode || storedCode;
+      if (codeToJoin) {
+        router.replace(`/join/${codeToJoin}`);
       } else {
         router.replace('/(tabs)');
       }
